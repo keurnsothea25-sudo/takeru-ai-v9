@@ -1,0 +1,16 @@
+{
+  "name": "takeru-analyzer-ai-pro",
+  "version": "9.0.0",
+  "description": "TAKERU Analyzer AI — 15m Auto-Scan + Auto 1H/4H POI + 2h Auto-Train",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "pg": "^8.11.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

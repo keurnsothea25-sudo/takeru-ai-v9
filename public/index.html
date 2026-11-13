@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TAKERU Analyzer AI — 15m + Auto 1H/4H POI Institutional Terminal</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=JetBrains+Mono:wght@500;700;800&display=swap');
+    :root {
+      --bg: #050811;
+      --sidebar: #080d1a;
+      --card: rgba(13, 20, 38, 0.92);
+      --inner: #070b15;
+      --text: #f8fafc;
+      --muted: #64748b;
+      --cyan: #00d2ff;
+      --blue: #2563eb;
+      --gold: #f5b700;
+      --emerald: #10b981;
+      --crimson: #ff2a5f;
+      --border: rgba(148, 163, 184, 0.14);
+      --grad: linear-gradient(135deg, #00d2ff 0%, #2563eb 55%, #6a5acd 100%);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .ticker-bar {
+      background: #03060c;
+      border-bottom: 1px solid var(--border);
+      padding: 8px 20px;
+      display: flex;
+      justify-content: space-between;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    .shell { display: flex; flex: 1; }
+    .sidebar {
+      width: 255px;
+      background: var(--sidebar);
+      border-right: 1px solid var(--border);
+      padding: 18px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .nav-btn {
+      background: transparent;
+      border: none;
+      color: #cbd5e1;
+      padding: 11px 13px;
+      border-radius: 11px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: left;
+      display: flex;
+      justify-content: space-between;
+    }
+    .nav-btn.active { background: var(--grad); color: #fff; }
+    .main { flex: 1; padding: 20px; max-width: 1420px; margin: 0 auto; width: 100%; }
+    .view { display: none; }
+    .view.active { display: block; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      margin-bottom: 18px;
+    }
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 12px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .grid-2 { display: grid; grid-template-columns: 1.45fr 1fr; gap: 18px; }
+    .grid-eq { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .kpi { background: var(--inner); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+    .kpi-lbl { font-size: 10.5px; color: var(--muted); font-weight: 800; text-transform: uppercase; }
+    .kpi-val { font-size: 22px; font-weight: 900; font-family: 'JetBrains Mono', monospace; color: var(--cyan); margin-top: 4px; }
+    .price-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+    .p-box { background: var(--inner); border: 1px solid var(--border); border-radius: 11px; padding: 12px; }
+    .p-lbl { font-size: 10.5px; color: var(--muted); font-weight: 800; }
+    .p-val { font-size: 19px; font-weight: 900; font-family: 'JetBrains Mono', monospace; margin-top: 4px; }
+    .btn {
+      background: var(--grad);
+      color: #fff;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-weight: 800;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .btn-outline {
+      background: var(--inner);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 9px 14px;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 12.5px;
+      cursor: pointer;
+    }
+    /* Website-Only Bilingual Ask Follow-Up Widget (Pic 2 Style) */
+    .followup-card {
+      margin-top: 16px;
+      background: #0b0e14;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 18px;
+      padding: 20px;
+    }
+    .lang-pill {
+      background: #12161f;
+      border: 1px solid rgba(255,255,255,0.14);
+      color: #94a3b8;
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .lang-pill.active { background: #d99b26; color: #050811; border-color: #d99b26; }
+    .q-pill {
+      background: #12161f;
+      border: 1px solid rgba(255,255,255,0.12);
+      color: #f8fafc;
+      padding: 10px 18px;
+      border-radius: 999px;
+      font-size: 13.5px;
+      font-weight: 700;
+      cursor: pointer;
+      display: block;
+      margin-top: 8px;
+    }
+    .q-pill:hover { border-color: #d99b26; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 11px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+    th { font-size: 11px; color: var(--muted); text-transform: uppercase; background: var(--sidebar); }
+    .input { background: var(--inner); border: 1px solid var(--border); color: #fff; padding: 10px 12px; border-radius: 10px; width: 100%; margin-top: 4px; }
+    @media (max-width: 1024px) { .grid-2, .grid-eq { grid-template-columns: 1fr; } .shell { flex-direction: column; } .sidebar { width: 100%; flex-direction: row; overflow-x: auto; } }
+  </style>
+</head>
+<body>
+
+  <div class="ticker-bar">
+    <div style="display:flex; gap:20px;">
+      <span><b>XAU/USD</b> <span id="tkXau" style="color:var(--emerald);">2748.50</span></span>
+      <span><b>XAG/USD</b> <span id="tkXag" style="color:var(--emerald);">32.72</span></span>
+      <span><b>DXY</b> <span id="tkDxy" style="color:var(--crimson);">104.08</span></span>
+      <span><b>USD/JPY</b> <span id="tkJpy" style="color:var(--crimson);">152.38</span></span>
+      <span><b>EUR/USD</b> <span id="tkEur" style="color:var(--emerald);">1.0865</span></span>
+    </div>
+    <div>🔄 2h Auto-Train Active • Next Train: <b id="nextTrainText" style="color:var(--cyan);">--:--</b></div>
+  </div>
+
+  <div class="shell">
+    <aside class="sidebar">
+      <div style="font-size:16px; font-weight:900; padding:6px 10px 14px; border-bottom:1px solid var(--border); margin-bottom:8px;">
+        ⚡ TAKERU AI v9.0
+        <div style="font-size:10.5px; color:var(--muted); font-weight:600;">15M + AUTO 1H/4H POI</div>
+      </div>
+      <button class="nav-btn active" onclick="showTab('terminal', this)"><span>⚡ 15m Live Auto-Scan</span><span style="color:var(--emerald);">5s</span></button>
+      <button class="nav-btn" onclick="showTab('concepts', this)"><span>🧬 Auto-Selected Concepts</span><span style="color:var(--gold);">2h</span></button>
+      <button class="nav-btn" onclick="showTab('corr-news', this)"><span>🌐 Correlation &amp; News</span></button>
+      <button class="nav-btn" onclick="showTab('config', this)"><span>⚙️ Telegram &amp; Supabase</span></button>
+    </aside>
+
+    <main class="main">
+      <!-- TAB 1: LIVE 15M AUTO-SCAN + AUTO 1H/4H POI -->
+      <section class="view active" id="tab-terminal">
+        <div class="kpi-row">
+          <div class="kpi">
+            <div class="kpi-lbl">Primary Analysis TF</div>
+            <div class="kpi-val">15M (Auto-Scan <span id="countdownText">5</span>s)</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-lbl">Auto 1H HTF POI Detected</div>
+            <div class="kpi-val" id="poi1hBadge" style="font-size:15px; color:var(--gold);">1H Bullish Body OB</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-lbl">Auto 4H HTF POI Detected</div>
+            <div class="kpi-val" id="poi4hBadge" style="font-size:15px; color:var(--emerald);">4H Bullish FVG</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-lbl">Trade Lock (1:2 RR Hold)</div>
+            <div class="kpi-val" id="lockStatusBadge" style="font-size:15px;">IDLE</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h3 style="font-size:16px;">⚡ XAU/USD 15m Institutional Scanner (Auto 1H &amp; 4H FVG / OB / IFVG)</h3>
+              <div style="font-size:12px; color:var(--muted);" id="activeConceptBanner">Auto-Selected Top 5 High-Profit Concepts Active</div>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button class="btn-outline" onclick="unlockTradeNow()">🔓 Reset Lock</button>
+              <button class="btn" onclick="testTelegramSignal()">📲 Test Drop Signal to Telegram</button>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <canvas id="chart15mCanvas" width="880" height="440" style="width:100%; border-radius:14px; background:#04070e; border:1px solid var(--border);"></canvas>
+
+            <div style="background:var(--inner); border:2px solid var(--cyan); border-radius:16px; padding:18px;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span id="sigOrderType" style="font-size:22px; font-weight:900; color:var(--emerald);">🟢 BUY NOW</span>
+                <span id="sigConfidence" style="font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:900; color:var(--cyan);">89.4%</span>
+              </div>
+              <div style="font-size:11.5px; color:var(--muted); margin:6px 0 12px;">
+                Auto-Drops to Telegram at <b>&ge; 75%</b> • Holds strictly until <b>Full TP (1:2 RR)</b> or <b>SL</b>
+              </div>
+
+              <div class="price-grid">
+                <div class="p-box"><div class="p-lbl">ENTRY (CANDLE BODY)</div><div class="p-val" id="valEntry">2748.50</div></div>
+                <div class="p-box"><div class="p-lbl">STOP LOSS (SL)</div><div class="p-val" id="valSl" style="color:var(--crimson);">2745.00</div></div>
+                <div class="p-box"><div class="p-lbl">TP 1 (1:1 RR)</div><div class="p-val" id="valTp1" style="color:var(--emerald);">2752.00</div></div>
+                <div class="p-box"><div class="p-lbl">FULL TP (1:2 RR HOLD)</div><div class="p-val" id="valFullTp" style="color:var(--gold);">2755.50</div></div>
+              </div>
+
+              <div style="margin-top:14px; padding:10px; border-radius:10px; background:rgba(0,210,255,0.08); font-size:12px; font-family:monospace;">
+                <div style="color:var(--muted); margin-bottom:4px;">📲 Exact Minimalist Telegram Output Preview:</div>
+                <div id="tgPreviewBox" style="white-space:pre-line; color:#fff; font-weight:700;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- WEBSITE-ONLY BILINGUAL ASK FOLLOW-UP WIDGET (NEVER SENT TO TELEGRAM) -->
+          <div class="followup-card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+              <span style="font-size:12px; font-weight:800; color:#d99b26; letter-spacing:1px;">— ASK FOLLOW-UP (WEBSITE ONLY)</span>
+              <div style="display:flex; gap:6px;">
+                <button class="lang-pill active" id="btnKm" onclick="switchLang('km')">🇰🇭 ភាសាខ្មែរ</button>
+                <button class="lang-pill" id="btnEn" onclick="switchLang('en')">🇬🇧 English</button>
+              </div>
+            </div>
+            <div id="followTitle" style="font-size:18px; font-weight:800; margin-bottom:10px;">Why Buy Khmer Response</div>
+            <div id="followBody" style="font-size:14.5px; line-height:1.75; color:#d1d5db; margin-bottom:14px;"></div>
+            <div>
+              <button class="q-pill" onclick="setFollowTopic('invalidate')">What invalidates this setup?</button>
+              <button class="q-pill" onclick="setFollowTopic('opposite')">What about the opposite direction?</button>
+              <button class="q-pill" onclick="setFollowTopic('trigger')">Best entry trigger to watch?</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: AUTO-SELECTED HIGH PROFIT CONCEPTS & 2-HOUR AUTO-TRAINER -->
+      <section class="view" id="tab-concepts">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h3>🧬 Autonomous Multi-Concept Backtester &amp; 2-Hour Auto-Trainer (Render Restart Protected)</h3>
+              <div style="font-size:12px; color:var(--muted);">
+                AI automatically backtests 48+ Candle-Body &amp; 1H/4H POI concepts every 2 hours and <b>Auto-Selects the Top 5 Highest Win Rate &amp; Profitable Models</b>.
+              </div>
+            </div>
+            <button class="btn" id="btnTrainNow" onclick="forceTrainNow()">🚀 Run Backtest &amp; Train AI Now</button>
+          </div>
+          <table>
+            <thead>
+              <tr><th>Rank</th><th>Auto-Status</th><th>Strategy DNA (15m Body + 1H/4H POI)</th><th>Win Rate</th><th>Profit Factor</th><th>Net Profit (1:2 RR)</th></tr>
+            </thead>
+            <tbody id="conceptsTbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB 3: GOLD CORRELATION & NEWS -->
+      <section class="view" id="tab-corr-news">
+        <div class="grid-eq">
+          <div class="card">
+            <div class="card-head"><h3>🌐 Gold 15m Intermarket Correlation Matrix</h3></div>
+            <div id="corrList" style="display:flex; flex-direction:column; gap:10px;"></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>📰 Live Gold &amp; USD Macro News Sentiment</h3></div>
+            <div id="newsList" style="display:flex; flex-direction:column; gap:10px;"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: TELEGRAM & SUPABASE CONFIG -->
+      <section class="view" id="tab-config">
+        <div class="card" style="max-width:680px;">
+          <div class="card-head">
+            <h3>⚙️ Telegram Bot &amp; Supabase Cloud Config (Anti-Restart Sync)</h3>
+            <span id="dbStatusBadge" style="color:var(--emerald); font-size:12px; font-weight:800;"></span>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:12px;">
+            <div>
+              <label style="font-size:12px; color:var(--muted);">Telegram Bot Token</label>
+              <input type="text" id="cfgToken" class="input" value="8569884229:AAFvXpiRt1TErXTfOa4ju2WIQuStUeJpvjI" />
+            </div>
+            <div>
+              <label style="font-size:12px; color:var(--muted);">Telegram Chat ID</label>
+              <input type="text" id="cfgChat" class="input" value="-1004290149125" />
+            </div>
+            <div>
+              <label style="font-size:12px; color:var(--muted);">Supabase PostgreSQL URI (`DATABASE_URL` — Protects against Render restarts)</label>
+              <input type="password" id="cfgDbUrl" class="input" placeholder="postgresql://postgres:password@db.project.supabase.co:5432/postgres" />
+            </div>
+            <button class="btn" onclick="saveConfig()">💾 Save &amp; Sync Configuration</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    let countdown = 5;
+    let lang = 'km';
+    let topic = 'main';
+    let lastScanData = null;
+
+    function showTab(id, btn) {
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      document.getElementById('tab-' + id).classList.add('active');
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+    }
+
+    setInterval(() => {
+      countdown--;
+      if (countdown <= 0) {
+        countdown = 5;
+        pollLiveScan();
+      }
+      document.getElementById('countdownText').textContent = countdown;
+    }, 1000);
+
+    async function pollLiveScan() {
+      try {
+        const res = await fetch('/api/live-scan');
+        const data = await res.json();
+        if (!data.ok) return;
+        lastScanData = data;
+
+        // Ticker
+        document.getElementById('tkXau').textContent = `${data.spot.XAUUSD.price} (${data.spot.XAUUSD.change >= 0 ? '+' : ''}${data.spot.XAUUSD.change}%)`;
+        document.getElementById('tkXag').textContent = `${data.spot.XAGUSD.price} (${data.spot.XAGUSD.change >= 0 ? '+' : ''}${data.spot.XAGUSD.change}%)`;
+        document.getElementById('tkDxy').textContent = `${data.spot.DXY.price} (${data.spot.DXY.change}%)`;
+        document.getElementById('tkJpy').textContent = `${data.spot.USDJPY.price} (${data.spot.USDJPY.change}%)`;
+        document.getElementById('tkEur').textContent = `${data.spot.EURUSD.price} (${data.spot.EURUSD.change}%)`;
+
+        if (data.aiModel?.nextTrainAt) {
+          document.getElementById('nextTrainText').textContent = new Date(data.aiModel.nextTrainAt).toLocaleTimeString();
+        }
+        document.getElementById('dbStatusBadge').textContent = data.dbHealth?.dbType || 'Connected';
+
+        const s = data.scan;
+        const lv = s.levels;
+        document.getElementById('poi1hBadge').textContent = `${s.htfPois.poi1h.type} (${s.htfPois.poi1h.mid})`;
+        document.getElementById('poi4hBadge').textContent = `${s.htfPois.poi4h.type} (${s.htfPois.poi4h.mid})`;
+        document.getElementById('lockStatusBadge').textContent = data.tradeLock.status;
+        document.getElementById('activeConceptBanner').textContent = `🧬 Auto-Selected Ensemble: ${s.primaryConceptName}`;
+
+        const isBuy = s.direction === 'BUY';
+        const sigEl = document.getElementById('sigOrderType');
+        sigEl.textContent = `${isBuy ? '🟢' : '🔴'} ${s.orderType}`;
+        sigEl.style.color = isBuy ? 'var(--emerald)' : 'var(--crimson)';
+
+        document.getElementById('sigConfidence').textContent = `${s.winProbability}%`;
+        document.getElementById('valEntry').textContent = lv.entry.toFixed(2);
+        document.getElementById('valSl').textContent = lv.sl.toFixed(2);
+        document.getElementById('valTp1').textContent = lv.tp1.toFixed(2);
+        document.getElementById('valFullTp').textContent = lv.fullTp.toFixed(2);
+
+        document.getElementById('tgPreviewBox').textContent =
+          `${isBuy ? '🟢' : '🔴'} ${s.orderType} — XAUUSD\nEntry: ${lv.entry.toFixed(2)}\nSL: ${lv.sl.toFixed(2)}\nTP 1: ${lv.tp1.toFixed(2)}\nFull TP: ${lv.fullTp.toFixed(2)}`;
+
+        drawChart(data.candles15m, lv, s.htfPois);
+        renderFollowUp();
+        renderConcepts(data.allConcepts || []);
+        renderCorrAndNews(data.correlation, data.news);
+      } catch (e) {}
+    }
+
+    function drawChart(candles, lv, pois) {
+      const c = document.getElementById('chart15mCanvas');
+      const ctx = c.getContext('2d');
+      const W = c.width, H = c.height;
+      ctx.fillStyle = '#04070e';
+      ctx.fillRect(0, 0, W, H);
+
+      const padL = 20, padR = 95, padT = 42, padB = 28;
+      const pW = W - padL - padR, pH = H - padT - padB;
+      const maxP = Math.max(...candles.map(x => x.high), lv.fullTp) + 1.0;
+      const minP = Math.min(...candles.map(x => x.low), lv.sl) - 1.0;
+      const rng = Math.max(0.1, maxP - minP);
+      const yOf = p => padT + ((maxP - p) / rng) * pH;
+
+      const step = pW / candles.length;
+      const bW = Math.max(2.5, step * 0.65);
+      candles.forEach((k, i) => {
+        const cx = padL + (i + 0.5) * step;
+        const col = k.close >= k.open ? '#10b981' : '#ff2a5f';
+        ctx.strokeStyle = col;
+        ctx.beginPath(); ctx.moveTo(cx, yOf(k.high)); ctx.lineTo(cx, yOf(k.low)); ctx.stroke();
+        const top = yOf(Math.max(k.open, k.close));
+        const bot = yOf(Math.min(k.open, k.close));
+        ctx.fillStyle = col;
+        ctx.fillRect(cx - bW / 2, top, bW, Math.max(2, bot - top));
+      });
+
+      const line = (p, col, lbl) => {
+        const y = yOf(p);
+        ctx.strokeStyle = col;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = col;
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText(`${lbl}: ${p.toFixed(2)}`, padL + 8, y - 5);
+      };
+      line(lv.entry, '#00d2ff', 'ENTRY');
+      line(lv.sl, '#ff2a5f', 'SL');
+      line(lv.tp1, '#10b981', 'TP 1 (1:1)');
+      line(lv.fullTp, '#f5b700', 'FULL TP (1:2)');
+
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 13px Inter, sans-serif';
+      ctx.fillText(`XAU/USD [15M] • Auto 1H POI: ${pois.poi1h.type} | Auto 4H POI: ${pois.poi4h.type}`, padL, 26);
+    }
+
+    function switchLang(l) {
+      lang = l;
+      document.getElementById('btnKm').classList.toggle('active', l === 'km');
+      document.getElementById('btnEn').classList.toggle('active', l === 'en');
+      renderFollowUp();
+    }
+
+    function setFollowTopic(t) {
+      topic = t;
+      renderFollowUp();
+    }
+
+    function renderFollowUp() {
+      if (!lastScanData) return;
+      const s = lastScanData.scan;
+      const lv = s.levels;
+      const isBuy = s.direction === 'BUY';
+      const title = document.getElementById('followTitle');
+      const body = document.getElementById('followBody');
+
+      if (topic === 'main') {
+        if (lang === 'km') {
+          title.textContent = isBuy ? 'Why Buy Khmer Response' : 'Why Sell Khmer Response';
+          body.textContent = `ការសម្រេចចិត្ត ${s.orderType} គឺផ្អែកលើការស្កេន POI ស្វ័យប្រវត្តិលើ 4H (${s.htfPois.poi4h.type}) និង 1H (${s.htfPois.poi1h.type}) រួមជាមួយ M15 ដែលបង្កើត CISD តាមរយៈការបិទតួទៀន (Candle Body Open/Close) ឆ្ពោះទៅរក Daily DOL ${lv.dailyDol.toFixed(2)}។ តម្លៃចូលគឺ ${lv.entry.toFixed(2)} ដោយកំណត់ Stop Loss នៅ ${lv.sl.toFixed(2)} ហើយកាន់ (Hold) ទៅរកគោលដៅ TP 1 (${lv.tp1.toFixed(2)}) និង Full TP 1:2 RR (${lv.fullTp.toFixed(2)})។`;
+        } else {
+          title.textContent = isBuy ? 'Why Buy English Response' : 'Why Sell English Response';
+          body.textContent = `The ${s.orderType} decision is driven by automatic HTF POI alignment on 4H (${s.htfPois.poi4h.type}) and 1H (${s.htfPois.poi1h.type}), combined with a 15m Candle Body CISD shift targeting Daily DOL at ${lv.dailyDol.toFixed(2)}. Entry is set at ${lv.entry.toFixed(2)} with Stop Loss at ${lv.sl.toFixed(2)}, holding for TP 1 (${lv.tp1.toFixed(2)}) and Full TP 1:2 RR (${lv.fullTp.toFixed(2)}).`;
+        }
+      } else if (topic === 'invalidate') {
+        title.textContent = 'What invalidates this setup?';
+        body.textContent = lang === 'km'
+          ? `Setup នេះនឹងត្រូវលុបចោលប្រសិនបើតម្លៃប៉ះ ឬបិទតួទៀន M15 ផុតកម្រិត Stop Loss ${lv.sl.toFixed(2)}។`
+          : `This setup is invalidated if price hits or closes a 15m candle body beyond the Stop Loss at ${lv.sl.toFixed(2)}.`;
+      } else if (topic === 'opposite') {
+        title.textContent = 'What about the opposite direction?';
+        body.textContent = lang === 'km'
+          ? `យើងនឹងប្ដូរទិសដៅលុះត្រាតែតំបន់ POI 1H/4H ត្រូវបានបំបែក ហើយបង្កើត 15m CISD Body ផ្ទុយ។`
+          : `We only flip direction if the 1H/4H POI zone fails and prints an opposing 15m Candle Body CISD.`;
+      } else {
+        title.textContent = 'Best entry trigger to watch?';
+        body.textContent = lang === 'km'
+          ? `រង់ចាំការបិទតួទៀន 15m (Body Close មិនគិតចុង Wick) ចេញពីតំបន់ ${lv.entryLow.toFixed(2)}–${lv.entryHigh.toFixed(2)}។`
+          : `Watch for a 15m candle body close (ignoring wicks) rejecting the ${lv.entryLow.toFixed(2)}–${lv.entryHigh.toFixed(2)} zone.`;
+      }
+    }
+
+    function renderConcepts(list) {
+      document.getElementById('conceptsTbody').innerHTML = list.map(c => `
+        <tr style="${c.autoSelected ? 'background:rgba(0,210,255,0.09);' : ''}">
+          <td><b>#${c.rank}</b></td>
+          <td>${c.autoSelected ? '<span style="color:var(--gold); font-weight:800;">👑 AUTO-SELECTED</span>' : '<span style="color:var(--muted);"> Standby</span>'}</td>
+          <td><b>${c.conceptId}</b> — ${c.conceptName}</td>
+          <td style="color:var(--emerald); font-family:monospace; font-weight:800;">${c.winRate}%</td>
+          <td style="font-family:monospace;">${c.profitFactor}x</td>
+          <td style="color:var(--gold); font-family:monospace; font-weight:800;">+${c.netRProfit}R</td>
+        </tr>
+      `).join('');
+    }
+
+    function renderCorrAndNews(corr, news) {
+      if (corr?.pairs) {
+        document.getElementById('corrList').innerHTML = corr.pairs.map(p => `
+          <div style="background:var(--inner); border:1px solid var(--border); padding:12px; border-radius:11px; display:flex; justify-content:space-between;">
+            <b>${p.symbol}</b>
+            <span style="font-family:monospace;"><b>${p.price}</b> (${p.status})</span>
+          </div>
+        `).join('');
+      }
+      if (news?.headlines) {
+        document.getElementById('newsList').innerHTML = news.headlines.map(h => `
+          <div style="background:var(--inner); border:1px solid var(--border); padding:12px; border-radius:11px;">
+            <div style="font-size:11px; color:var(--gold); font-weight:800;">${h.time} • ${h.sentiment}</div>
+            <div style="font-size:13.5px; font-weight:700; margin-top:4px;">${h.title}</div>
+          </div>
+        `).join('');
+      }
+    }
+
+    async function forceTrainNow() {
+      const btn = document.getElementById('btnTrainNow');
+      btn.textContent = '⏳ Backtesting 48+ Concepts & Training AI...';
+      await fetch('/api/train-now', { method: 'POST' });
+      btn.textContent = '🚀 Run Backtest & Train AI Now';
+      pollLiveScan();
+    }
+
+    async function unlockTradeNow() {
+      await fetch('/api/unlock-trade', { method: 'POST' });
+      pollLiveScan();
+    }
+
+    async function testTelegramSignal() {
+      await fetch('/api/telegram-test', { method: 'POST' });
+      alert('📲 Minimalist Signal Sent to Telegram!');
+    }
+
+    async function saveConfig() {
+      const botToken = document.getElementById('cfgToken').value.trim();
+      const chatId = document.getElementById('cfgChat').value.trim();
+      const databaseUrl = document.getElementById('cfgDbUrl').value.trim();
+      await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ botToken, chatId, databaseUrl })
+      });
+      alert('✅ Saved & Synced!');
+      pollLiveScan();
+    }
+
+    window.addEventListener('load', pollLiveScan);
+  </script>
+</body>
+</html>
