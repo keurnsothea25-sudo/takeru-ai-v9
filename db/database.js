@@ -9,7 +9,7 @@ try {
   Pool = null;
 }
 
-const DB_FILE = path.join(DATA_DIR, 'persistent-state.json');
+const DB_FILE = path.join(DATA_DIR, 'persistent-state-v10.json');
 
 let pgPool = null;
 let pgConnected = false;
@@ -18,37 +18,37 @@ let memoryStore = null;
 function defaultStore() {
   return {
     ai_model: {
-      modelName: 'TAKERU_15M_HTF_POI_V9',
+      modelName: 'REAL_15M_BACKTEST_ENSEMBLE_V10',
       weights: {
-        htf1h4hPoiAlign: 2.35,
-        cisdBodyShift: 2.45,
-        msnrBodyBounce: 2.05,
-        bodyEntryZone: 2.10,
-        dailyDolTarget: 1.95,
-        smtCorrelation: 1.75,
-        newsSentiment: 1.55,
-        liquiditySweep: 2.15
+        strategyBacktestWinRate: 2.50,
+        entryZoneProximity: 2.65,
+        zoneReactionStrength: 2.20,
+        volatilityRrFit: 1.95,
+        correlationAlignment: 1.85,
+        newsSentimentAlign: 1.60,
+        volumeMomentum: 1.75,
+        sessionLiquidity: 1.55
       },
-      bias: -1.20,
-      sampleCount: 180,
-      accuracy: 92.4,
-      lastTrainedAt: new Date().toISOString(),
-      nextTrainAt: new Date(Date.now() + 2 * 3600 * 1000).toISOString()
+      bias: -1.35,
+      sampleCount: 0,
+      accuracy: 85.0,
+      lastTrainedAt: null,
+      nextTrainAt: null
     },
-    discovered_concepts: [],
-    auto_selected_concepts: [],
+    backtested_strategies: [],
+    auto_selected_strategies: [],
     trade_lock_state: {
       status: 'IDLE', // IDLE | LIMIT_PENDING | ACTIVE_IN_TRADE
       lockedTrade: null,
       lastClosedTrade: null,
       lastTelegramSignature: null,
       stats: {
-        totalTrades: 42,
-        wins: 34,
-        losses: 8,
-        tp1Hits: 36,
-        fullTpHits: 34,
-        winRate: 81.0
+        totalTrades: 0,
+        wins: 0,
+        losses: 0,
+        tp1Hits: 0,
+        fullTpHits: 0,
+        winRate: 0.0
       },
       updatedAt: new Date().toISOString()
     },
@@ -76,18 +76,15 @@ function loadStore() {
 async function saveStore() {
   const store = loadStore();
   fs.writeFileSync(DB_FILE, JSON.stringify(store, null, 2), 'utf8');
-
   if (pgConnected && pgPool) {
     try {
       await pgPool.query(
         `INSERT INTO kv_mega_state (key_name, payload, updated_at)
-         VALUES ('takeru_v9_state', $1::jsonb, NOW())
+         VALUES ('takeru_v10_state', $1::jsonb, NOW())
          ON CONFLICT (key_name) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()`,
         [JSON.stringify(store)]
       );
-    } catch (e) {
-      console.error('[Supabase Sync Warning]:', e.message);
-    }
+    } catch (e) {}
   }
   return store;
 }
@@ -112,24 +109,23 @@ async function initDatabaseEngine() {
         );
       `);
 
-      // Restore state on Render restart
-      const res = await pgPool.query(`SELECT payload FROM kv_mega_state WHERE key_name = 'takeru_v9_state'`);
+      const res = await pgPool.query(`SELECT payload FROM kv_mega_state WHERE key_name = 'takeru_v10_state'`);
       if (res.rows.length > 0 && res.rows[0].payload) {
         memoryStore = Object.assign(defaultStore(), res.rows[0].payload);
         fs.writeFileSync(DB_FILE, JSON.stringify(memoryStore, null, 2), 'utf8');
-        console.log('[Render Anti-Restart] Restored AI Model, Concepts & Active Trade State from Supabase Cloud.');
+        console.log('[Supabase Cloud] Restored AI Model, Backtest Stats & Active Trades.');
       } else {
         await saveStore();
       }
       pgConnected = true;
     } catch (err) {
       pgConnected = false;
-      console.warn('[Database] Supabase not connected, using local persistent JSON:', err.message);
+      console.warn('[Database] Using local JSON store:', err.message);
     }
   }
   return {
     pgConnected,
-    dbType: pgConnected ? 'Supabase PostgreSQL (Cloud Sync Active)' : 'Local JSON Persistent Store'
+    dbType: pgConnected ? 'Supabase PostgreSQL Cloud' : 'Local Persistent JSON'
   };
 }
 

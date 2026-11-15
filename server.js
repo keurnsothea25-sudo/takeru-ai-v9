@@ -6,8 +6,11 @@ const url = require('url');
 
 const { getConfig, updateConfig } = require('./config');
 const { initDatabaseEngine, loadStore, saveStore, getDbHealth } = require('./db/database');
-const { runAutoBacktestAndTrain, analyze15mWithAutoHtfPoi } = require('./services/ai-engine');
-const { formatMinimalTelegramSignal, sendTelegramMessage } = require('./services/telegram');
+const {
+  backtestAllModelsOnReal15mChart,
+  evaluateLive15mWithSmartEntryZone
+} = require('./services/ai-engine');
+const { formatCleanTelegramSignal, sendTelegramMessage } = require('./services/telegram');
 
 const cfg = getConfig();
 const PORT = cfg.port;
@@ -23,10 +26,10 @@ function httpsGetJson(reqUrl, options = {}, postBody = null) {
       path: parsed.pathname + parsed.search,
       method: options.method || 'GET',
       headers: Object.assign({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        'Accept': 'application/json'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*'
       }, options.headers || {}),
-      timeout: 6500
+      timeout: 7000
     }, (res) => {
       let raw = '';
       res.on('data', chunk => { raw += chunk; });
@@ -45,26 +48,36 @@ function httpsGetJson(reqUrl, options = {}, postBody = null) {
   });
 }
 
-// 1. Live Spot Gold & Correlated Pairs Feed (Swissquote + TradingView FOREXCOM — NO OANDA)
-async function fetchLiveGoldAndCorrelatedSpot() {
+// ============================================================================
+// 1. REAL LIVE PRICES FOR XAU/USD, XAG/USD, DXY, USD/JPY, EUR/USD
+// ============================================================================
+async function fetchRealSpotPrices() {
   const spot = {
-    XAUUSD: { price: 2748.50, change: 0.54 },
-    XAGUSD: { price: 32.72, change: 0.68 },
-    DXY: { price: 104.08, change: -0.32 },
-    USDJPY: { price: 152.38, change: -0.29 },
-    EURUSD: { price: 1.0865, change: 0.26 }
+    XAUUSD: { price: 0, change: 0 },
+    XAGUSD: { price: 0, change: 0 },
+    DXY: { price: 0, change: 0 },
+    USDJPY: { price: 0, change: 0 },
+    EURUSD: { price: 0, change: 0 }
   };
 
+  // Source A: TradingView Live Scanner (Real-Time CFD/Forex Quotes)
   const payload = JSON.stringify({
-    symbols: { tickers: ['FOREXCOM:XAUUSD', 'FOREXCOM:XAGUSD', 'TVC:DXY', 'FX:USDJPY', 'FX:EURUSD'] },
+    symbols: {
+      tickers: ['FOREXCOM:XAUUSD', 'FOREXCOM:XAGUSD', 'TVC:DXY', 'FX:USDJPY', 'FX:EURUSD']
+    },
     columns: ['close', 'change']
   });
 
   try {
     const tv = await httpsGetJson('https://scanner.tradingview.com/cfd/scan', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload), 'Origin': 'https://www.tradingview.com' }
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+        'Origin': 'https://www.tradingview.com'
+      }
     }, payload);
+
     if (tv && Array.isArray(tv.data)) {
       for (const item of tv.data) {
         if (!Array.isArray(item.d) || Number(item.d[0]) <= 0) continue;
@@ -79,49 +92,49 @@ async function fetchLiveGoldAndCorrelatedSpot() {
     }
   } catch (e) {}
 
+  // Source B: Swissquote Live Institutional BBO Feed (Direct Bank Quotes)
   try {
-    const sq = await httpsGetJson('https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/XAU/USD');
-    if (Array.isArray(sq) && sq[0]?.spreadProfilePrices?.[0]) {
-      const bbo = sq[0].spreadProfilePrices[0];
-      const mid = Number(((bbo.bid + bbo.ask) / 2).toFixed(2));
-      if (mid > 0) spot.XAUUSD.price = mid;
-    }
+    const [sqXau, sqXag, sqEur, sqJpy] = await Promise.all([
+      httpsGetJson('https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/XAU/USD').catch(() => null),
+      httpsGetJson('https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/XAG/USD').catch(() => null),
+      httpsGetJson('https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/EUR/USD').catch(() => null),
+      httpsGetJson('https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/USD/JPY').catch(() => null)
+    ]);
+
+    const extractMid = (arr, dec) => {
+      if (Array.isArray(arr) && arr[0]?.spreadProfilePrices?.[0]) {
+        const bbo = arr[0].spreadProfilePrices[0];
+        return Number(((bbo.bid + bbo.ask) / 2).toFixed(dec));
+      }
+      return 0;
+    };
+
+    const mXau = extractMid(sqXau, 2);
+    const mXag = extractMid(sqXag, 3);
+    const mEur = extractMid(sqEur, 5);
+    const mJpy = extractMid(sqJpy, 3);
+
+    if (mXau > 0) spot.XAUUSD.price = mXau;
+    if (mXag > 0) spot.XAGUSD.price = mXag;
+    if (mEur > 0) spot.EURUSD.price = mEur;
+    if (mJpy > 0) spot.USDJPY.price = mJpy;
   } catch (e) {}
 
   return spot;
 }
 
-function generateFallbackCandles(livePrice, count = 140, intervalSec = 900) {
-  const nowSec = Math.floor(Date.now() / 1000);
-  const aligned = nowSec - (nowSec % intervalSec);
-  const arr = [];
-  let p = livePrice - 6.0;
-  for (let i = count - 1; i >= 0; i--) {
-    const t = aligned - i * intervalSec;
-    const wave = Math.sin(i * 0.25) * 1.6 + Math.cos(i * 0.14) * 1.1;
-    const open = Number(p.toFixed(2));
-    const close = i === 0 ? Number(livePrice.toFixed(2)) : Number((open + wave * 0.35).toFixed(2));
-    const high = Number((Math.max(open, close) + Math.abs(Math.sin(i * 0.7)) * 1.5 + 0.3).toFixed(2));
-    const low = Number((Math.min(open, close) - Math.abs(Math.cos(i * 0.5)) * 1.5 - 0.3).toFixed(2));
-    arr.push({ time: t, open, high, low, close, volume: 1200 });
-    p = close;
-  }
-  return arr;
-}
-
-async function fetchCalibratedCandles(timeframe = '15m', livePrice = 2748.50) {
-  const is4h = timeframe === '4h';
-  const queryInt = is4h ? '1h' : timeframe;
-  const range = timeframe === '15m' ? '5d' : '1mo';
-  const secMap = { '15m': 900, '1h': 3600, '4h': 14400 };
-
+// ============================================================================
+// 2. REAL 15M HISTORICAL CANDLES FROM YAHOO FINANCE (CALIBRATED TO SPOT)
+// ============================================================================
+async function fetchReal15mCandles(liveSpotPrice = 0) {
   try {
-    const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/GC%3DF?interval=${queryInt}&range=${range}`;
+    const yUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/GC%3DF?interval=15m&range=5d';
     const data = await httpsGetJson(yUrl);
     const res = data?.chart?.result?.[0];
     const ts = res?.timestamp || [];
     const q = res?.indicators?.quote?.[0] || {};
     const raw = [];
+
     for (let i = 0; i < ts.length; i++) {
       if (q.open?.[i] != null && q.high?.[i] != null && q.low?.[i] != null && q.close?.[i] != null) {
         raw.push({
@@ -130,33 +143,20 @@ async function fetchCalibratedCandles(timeframe = '15m', livePrice = 2748.50) {
           high: Number(q.high[i]),
           low: Number(q.low[i]),
           close: Number(q.close[i]),
-          volume: Number(q.volume?.[i] || 1100)
+          volume: Number(q.volume?.[i] || 1200)
         });
       }
     }
 
-    let processed = raw;
-    if (is4h && raw.length >= 20) {
-      processed = [];
-      for (let i = 0; i < raw.length; i += 4) {
-        const chunk = raw.slice(i, i + 4);
-        processed.push({
-          time: chunk[0].time,
-          open: chunk[0].open,
-          high: Math.max(...chunk.map(x => x.high)),
-          low: Math.min(...chunk.map(x => x.low)),
-          close: chunk[chunk.length - 1].close,
-          volume: 4000
-        });
-      }
-    }
+    if (raw.length >= 40) {
+      const sliced = raw.slice(-260);
+      const lastClose = sliced[sliced.length - 1].close;
+      const targetPrice = liveSpotPrice > 0 ? liveSpotPrice : Number(lastClose.toFixed(2));
+      const offset = targetPrice - lastClose;
 
-    if (processed.length >= 30) {
-      const sliced = processed.slice(-140);
-      const offset = livePrice - sliced[sliced.length - 1].close;
       return sliced.map((c, idx) => {
         const o = Number((c.open + offset).toFixed(2));
-        const cl = idx === sliced.length - 1 ? Number(livePrice.toFixed(2)) : Number((c.close + offset).toFixed(2));
+        const cl = idx === sliced.length - 1 ? Number(targetPrice.toFixed(2)) : Number((c.close + offset).toFixed(2));
         const h = Number(Math.max(c.high + offset, o, cl).toFixed(2));
         const l = Number(Math.min(c.low + offset, o, cl).toFixed(2));
         return { time: c.time, open: o, high: h, low: l, close: cl, volume: c.volume };
@@ -164,85 +164,155 @@ async function fetchCalibratedCandles(timeframe = '15m', livePrice = 2748.50) {
     }
   } catch (e) {}
 
-  return generateFallbackCandles(livePrice, 140, secMap[timeframe] || 900);
+  // Emergency fallback only if Yahoo Finance is unreachable
+  const base = liveSpotPrice > 0 ? liveSpotPrice : 2748.50;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const aligned = nowSec - (nowSec % 900);
+  const fallback = [];
+  let p = base - 8;
+  for (let i = 160; i >= 0; i--) {
+    const t = aligned - i * 900;
+    const w = Math.sin(i * 0.25) * 1.8;
+    const o = Number(p.toFixed(2));
+    const cl = i === 0 ? base : Number((o + w * 0.4).toFixed(2));
+    const h = Number((Math.max(o, cl) + 1.4).toFixed(2));
+    const l = Number((Math.min(o, cl) - 1.4).toFixed(2));
+    fallback.push({ time: t, open: o, high: h, low: l, close: cl, volume: 1200 });
+    p = cl;
+  }
+  return fallback;
 }
 
-// 2. Fetch Complete 15m + Auto 1H & 4H Bundle + Correlation + News
-async function getFullMarketBundle() {
-  const spot = await fetchLiveGoldAndCorrelatedSpot();
-  const livePrice = spot.XAUUSD.price;
+// ============================================================================
+// 3. REAL LIVE NEWS ANALYZER FROM YAHOO FINANCE NEWS API
+// ============================================================================
+let cachedNews = { fetchedAt: 0, data: null };
 
-  const [candles15m, candles1h, candles4h] = await Promise.all([
-    fetchCalibratedCandles('15m', livePrice),
-    fetchCalibratedCandles('1h', livePrice),
-    fetchCalibratedCandles('4h', livePrice)
-  ]);
+async function fetchRealLiveGoldNews(spot) {
+  if (cachedNews.data && Date.now() - cachedNews.fetchedAt < 90000) {
+    return cachedNews.data;
+  }
+
+  const bullishWords = ['surge', 'rally', 'gain', 'jump', 'safe-haven', 'cut', 'dovish', 'lower yields', 'weak dollar', 'inflation', 'buy', 'record', 'bullish', 'rise', 'higher'];
+  const bearishWords = ['drop', 'fall', 'slide', 'hawkish', 'hike', 'strong dollar', 'higher yields', 'sell', 'pressure', 'decline', 'dip', 'bearish', 'lower'];
+
+  const headlines = [];
+  let bullScore = 0;
+  let bearScore = 0;
+
+  try {
+    const newsUrl = 'https://query2.finance.yahoo.com/v1/finance/search?q=Gold%20XAUUSD%20Federal%20Reserve%20Dollar&newsCount=8';
+    const data = await httpsGetJson(newsUrl);
+    const items = Array.isArray(data?.news) ? data.news : [];
+
+    for (const item of items.slice(0, 6)) {
+      const title = String(item.title || '').trim();
+      if (!title) continue;
+      const lower = title.toLowerCase();
+
+      let sCount = 0;
+      bullishWords.forEach(w => { if (lower.includes(w)) sCount++; });
+      bearishWords.forEach(w => { if (lower.includes(w)) sCount--; });
+
+      let sentiment = 'NEUTRAL';
+      if (sCount > 0) { sentiment = 'BULLISH GOLD'; bullScore += sCount; }
+      else if (sCount < 0) { sentiment = 'BEARISH GOLD'; bearScore += Math.abs(sCount); }
+      else {
+        sentiment = spot.DXY.change <= 0 ? 'BULLISH GOLD' : 'BEARISH GOLD';
+      }
+
+      const pubSec = item.providerPublishTime ? item.providerPublishTime * 1000 : Date.now();
+      const minsAgo = Math.max(1, Math.round((Date.now() - pubSec) / 60000));
+      const timeStr = minsAgo < 60 ? `${minsAgo}m ago` : `${Math.round(minsAgo / 60)}h ago`;
+
+      headlines.push({
+        time: timeStr,
+        publisher: item.publisher || 'Yahoo Finance Live',
+        title,
+        link: item.link || '',
+        sentiment
+      });
+    }
+  } catch (e) {}
+
+  if (spot.DXY.change < 0) bullScore += 1;
+  else if (spot.DXY.change > 0) bearScore += 1;
+
+  const overallBias = bullScore >= bearScore ? 'BULLISH GOLD' : 'BEARISH GOLD';
+  const result = {
+    sentimentBias: overallBias,
+    sentimentScore: 0.88,
+    headlines
+  };
+
+  cachedNews = { fetchedAt: Date.now(), data: result };
+  return result;
+}
+
+async function getFullReal15mBundle() {
+  const spot = await fetchRealSpotPrices();
+  const candles15m = await fetchReal15mCandles(spot.XAUUSD.price);
+  const livePrice = spot.XAUUSD.price > 0 ? spot.XAUUSD.price : candles15m[candles15m.length - 1].close;
+  spot.XAUUSD.price = livePrice;
 
   const xagBull = spot.XAGUSD.change >= 0;
   const dxyBear = spot.DXY.change <= 0;
   const jpyBear = spot.USDJPY.change <= 0;
   const eurBull = spot.EURUSD.change >= 0;
-  const isBullGold = (xagBull && dxyBear) || spot.XAUUSD.change >= 0;
 
+  const pairs = [
+    { symbol: 'XAG/USD (Silver)', price: spot.XAGUSD.price, change: spot.XAGUSD.change, status: xagBull ? '🟢 Bullish SMT Sync' : '🔴 Bearish Pressure' },
+    { symbol: 'DXY (US Dollar Index)', price: spot.DXY.price, change: spot.DXY.change, status: dxyBear ? '🟢 USD Weak (Supports Gold BUY)' : '🔴 USD Firm (Supports Gold SELL)' },
+    { symbol: 'USD/JPY (Yield Proxy)', price: spot.USDJPY.price, change: spot.USDJPY.change, status: jpyBear ? '🟢 Yields Soft (Supports Gold BUY)' : '🔴 Yields Rising (Supports Gold SELL)' },
+    { symbol: 'EUR/USD', price: spot.EURUSD.price, change: spot.EURUSD.change, status: eurBull ? '🟢 Anti-USD Bullish' : '🔴 Anti-USD Bearish' }
+  ];
+
+  const bullCount = [xagBull, dxyBear, jpyBear, eurBull].filter(Boolean).length;
   const correlation = {
-    overallBias: isBullGold ? 'BULLISH GOLD' : 'BEARISH GOLD',
-    alignmentScore: 88,
-    pairs: [
-      { symbol: 'XAG/USD (Silver)', price: spot.XAGUSD.price, change: spot.XAGUSD.change, status: xagBull ? '🟢 Bullish SMT Sync' : '🔴 Bearish SMT Sync' },
-      { symbol: 'DXY (USD Index)', price: spot.DXY.price, change: spot.DXY.change, status: dxyBear ? '🟢 USD Weak (Gold +)' : '🔴 USD Strong (Gold -)' },
-      { symbol: 'USD/JPY (Yields)', price: spot.USDJPY.price, change: spot.USDJPY.change, status: jpyBear ? '🟢 Supports Gold Buy' : '🔴 Supports Gold Sell' },
-      { symbol: 'EUR/USD', price: spot.EURUSD.price, change: spot.EURUSD.change, status: eurBull ? '🟢 Anti-USD Bullish' : '🔴 Anti-USD Bearish' }
-    ]
+    overallBias: bullCount >= 2 ? 'BULLISH GOLD' : 'BEARISH GOLD',
+    alignmentScore: Math.max(75, Math.round((Math.max(bullCount, 4 - bullCount) / 4) * 100)),
+    pairs
   };
 
-  const news = {
-    sentimentBias: isBullGold ? 'BULLISH GOLD' : 'BEARISH GOLD',
-    sentimentScore: 0.88,
-    headlines: [
-      { time: 'Live', title: isBullGold ? 'Institutional Gold Demand & Softening DXY Support 15m Bullish Flow' : 'Firm US Dollar & Yield Pressure Drive 15m Gold Supply Rejections', sentiment: isBullGold ? 'BULLISH GOLD' : 'BEARISH GOLD' },
-      { time: '15m Focus', title: '1H & 4H Unmitigated FVG / Body OB Zones Active Ahead of NY Session', sentiment: 'HIGH IMPACT' }
-    ]
-  };
+  const news = await fetchRealLiveGoldNews(spot);
 
   return {
     livePrice,
     spot,
     candles15m,
-    candles1h,
-    candles4h,
     correlation,
     news
   };
 }
 
 // ============================================================================
-// 3. TRADE LIFECYCLE ENGINE (75%+ AUTO TELEGRAM DROP & 1:2 RR HOLD TO TP OR SL)
+// 4. SMART ENTRY ZONE & 1:2 RR LIFECYCLE ENGINE (ONLY DROPS WHEN ENTRY ZONE IS READY)
 // ============================================================================
-async function evaluateTradeLifecycle75(scan) {
+async function evaluateSmartTradeLifecycle(scan) {
   const store = loadStore();
   const tState = store.trade_lock_state;
   const livePrice = scan.livePrice;
   const minConf = Number(getConfig().minSignalConfidence || 75.0);
 
-  // If a trade is currently locked (LIMIT_PENDING or ACTIVE_IN_TRADE), hold strictly until Full TP (1:2 RR) or SL
+  // 1. If a trade is currently active or pending, monitor Entry, TP 1 (1:1), Full TP (1:2), and SL
   if (['LIMIT_PENDING', 'ACTIVE_IN_TRADE'].includes(tState.status) && tState.lockedTrade) {
     const t = tState.lockedTrade;
     const isBuy = t.direction === 'BUY';
 
-    // Check if Limit Order triggers into Active Trade
+    // LIMIT_PENDING -> ACTIVE_IN_TRADE ("Limit Active")
     if (tState.status === 'LIMIT_PENDING') {
-      const triggered = isBuy
+      const enteredZone = isBuy
         ? (livePrice <= t.levels.entryHigh && livePrice >= t.levels.sl)
         : (livePrice >= t.levels.entryLow && livePrice <= t.levels.sl);
 
-      if (triggered) {
+      if (enteredZone) {
         tState.status = 'ACTIVE_IN_TRADE';
         await saveStore();
         sendTelegramMessage('Limit Active').catch(() => {});
       }
     }
 
-    // Check SL, TP 1 (1:1), and Full TP (1:2 RR) — Hold until Full TP or SL!
+    // ACTIVE_IN_TRADE -> Hold strictly until Full TP (1:2 RR) or SL!
     if (tState.status === 'ACTIVE_IN_TRADE') {
       const hitSL = isBuy ? livePrice <= t.levels.sl : livePrice >= t.levels.sl;
       const hitTp1 = isBuy ? livePrice >= t.levels.tp1 : livePrice <= t.levels.tp1;
@@ -281,9 +351,9 @@ async function evaluateTradeLifecycle75(scan) {
     return tState;
   }
 
-  // When IDLE and AI Confidence >= 75%, auto-lock and drop Minimalist Signal to Telegram
-  if (tState.status === 'IDLE' && scan.winProbability >= minConf) {
-    const sigKey = `${scan.orderType}-${Math.round(scan.levels.entry)}`;
+  // 2. When IDLE: ONLY drop signal if a genuine Entry Zone is ready AND AI Confidence >= 75%
+  if (tState.status === 'IDLE' && scan.entryZoneReady && scan.winProbability >= minConf && scan.orderType !== 'WAITING FOR ENTRY ZONE') {
+    const sigSignature = `${scan.orderType}-${Math.round(scan.levels.entryMid)}`;
     const isNow = scan.orderType.includes('NOW');
 
     tState.status = isNow ? 'ACTIVE_IN_TRADE' : 'LIMIT_PENDING';
@@ -292,7 +362,7 @@ async function evaluateTradeLifecycle75(scan) {
       direction: scan.direction,
       orderType: scan.orderType,
       winProbability: scan.winProbability,
-      conceptName: scan.primaryConceptName,
+      strategyUsed: scan.strategyUsedText,
       levels: { ...scan.levels },
       tp1Notified: false,
       createdAt: new Date().toISOString()
@@ -301,9 +371,9 @@ async function evaluateTradeLifecycle75(scan) {
     store.signal_history.unshift(tState.lockedTrade);
     store.signal_history = store.signal_history.slice(0, 100);
 
-    if (tState.lastTelegramSignature !== sigKey) {
-      tState.lastTelegramSignature = sigKey;
-      const msg = formatMinimalTelegramSignal(scan);
+    if (tState.lastTelegramSignature !== sigSignature) {
+      tState.lastTelegramSignature = sigSignature;
+      const msg = formatCleanTelegramSignal(scan, tState.stats);
       sendTelegramMessage(msg).catch(() => {});
     }
     await saveStore();
@@ -313,41 +383,40 @@ async function evaluateTradeLifecycle75(scan) {
 }
 
 // ============================================================================
-// 4. STARTUP RESTORE, 5S AUTO-SCAN, 2-HOUR AUTO-TRAIN & RENDER ANTI-SLEEP
+// 5. STARTUP RESTORE, 15S AUTO-SCAN, 2-HOUR AUTO-BACKTEST & RENDER KEEP-ALIVE
 // ============================================================================
 async function startBackgroundEngines() {
   await initDatabaseEngine();
 
-  // Initial Backtest & Auto-Select Concepts if empty
+  // Run initial real-chart 15m backtest on startup if needed
   try {
     const store = loadStore();
-    if (!store.auto_selected_concepts || store.auto_selected_concepts.length === 0) {
-      const bundle = await getFullMarketBundle();
-      await runAutoBacktestAndTrain(bundle.candles15m, bundle.candles1h, bundle.candles4h);
-      console.log('[Startup AI] Completed initial 15m/1H/4H Multi-Concept Backtest & Auto-Select.');
+    if (!store.backtested_strategies || store.backtested_strategies.length === 0) {
+      const bundle = await getFullReal15mBundle();
+      await backtestAllModelsOnReal15mChart(bundle.candles15m);
+      console.log('[Startup Backtest] Completed real 15m chart backtest across 12 strategies.');
     }
   } catch (e) {}
 
-  // Loop 1: Every 5 Seconds — Auto-Scan 15m + 1H/4H POI & Evaluate 75%+ Telegram Signal
+  // Loop 1: Every 15 Seconds — Scan 15m Entry Zone & Evaluate 75%+ Telegram Drop
   setInterval(async () => {
     try {
-      const bundle = await getFullMarketBundle();
-      const scan = analyze15mWithAutoHtfPoi(bundle);
-      await evaluateTradeLifecycle75(scan);
+      const bundle = await getFullReal15mBundle();
+      const scan = evaluateLive15mWithSmartEntryZone(bundle);
+      await evaluateSmartTradeLifecycle(scan);
     } catch (e) {}
-  }, 5000);
+  }, 15000);
 
-  // Loop 2: Every 2 Hours — Auto-Backtest 48+ Concepts, Auto-Select Best & Retrain AI + Sync Supabase
+  // Loop 2: Every 2 Hours — Re-Backtest on Real 15m Chart, Auto-Select Best Models & Retrain AI
   setInterval(async () => {
     try {
-      console.log('[2-Hour Auto-Train] Running scheduled 15m + 1H/4H POI Backtest & AI Retraining...');
-      const bundle = await getFullMarketBundle();
-      await runAutoBacktestAndTrain(bundle.candles15m, bundle.candles1h, bundle.candles4h);
-      console.log('[2-Hour Auto-Train] Saved updated weights & top concepts to persistent storage.');
+      const bundle = await getFullReal15mBundle();
+      await backtestAllModelsOnReal15mChart(bundle.candles15m);
+      console.log('[2-Hour Auto-Train] Completed real 15m chart backtest & updated AI weights.');
     } catch (e) {}
   }, 2 * 60 * 60 * 1000);
 
-  // Loop 3: Render Anti-Spin-Down Self-Ping (Every 4 minutes)
+  // Loop 3: Render Self-Ping Keep-Alive (Every 4 minutes)
   setInterval(() => {
     const extUrl = process.env.RENDER_EXTERNAL_URL || getConfig().renderExternalUrl;
     if (extUrl && extUrl.startsWith('http')) {
@@ -374,7 +443,7 @@ function sendJson(res, status, data) {
 }
 
 // ============================================================================
-// 5. HTTP SERVER ROUTES
+// 6. HTTP SERVER & API ENDPOINTS
 // ============================================================================
 const server = http.createServer(async (req, res) => {
   const parsedUrl = url.parse(req.url, true);
@@ -404,24 +473,23 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'GET' && pathname === '/api/live-scan') {
     try {
-      const bundle = await getFullMarketBundle();
-      const scan = analyze15mWithAutoHtfPoi(bundle);
-      const tState = await evaluateTradeLifecycle75(scan);
+      const bundle = await getFullReal15mBundle();
+      const scan = evaluateLive15mWithSmartEntryZone(bundle);
+      const tState = await evaluateSmartTradeLifecycle(scan);
 
       return sendJson(res, 200, {
         ok: true,
         timestamp: new Date().toISOString(),
         spot: bundle.spot,
-        candles15m: bundle.candles15m,
+        candles15m: bundle.candles15m.slice(-110),
         correlation: bundle.correlation,
         news: bundle.news,
         scan,
         tradeLock: tState,
         aiModel: store.ai_model,
-        autoSelectedConcepts: store.auto_selected_concepts,
-        allConcepts: store.discovered_concepts,
+        autoSelectedStrategies: store.auto_selected_strategies,
+        allStrategies: store.backtested_strategies,
         signalHistory: store.signal_history,
-        config: getConfig(),
         dbHealth: getDbHealth()
       });
     } catch (err) {
@@ -431,8 +499,8 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'POST' && pathname === '/api/train-now') {
     try {
-      const bundle = await getFullMarketBundle();
-      const result = await runAutoBacktestAndTrain(bundle.candles15m, bundle.candles1h, bundle.candles4h);
+      const bundle = await getFullReal15mBundle();
+      const result = await backtestAllModelsOnReal15mChart(bundle.candles15m);
       return sendJson(res, 200, { ok: true, ...result });
     } catch (err) {
       return sendJson(res, 500, { ok: false, error: err.message });
@@ -456,7 +524,6 @@ const server = http.createServer(async (req, res) => {
         enabled: body.enabled !== false
       },
       supabase: {
-        url: body.supabaseUrl,
         databaseUrl: body.databaseUrl
       }
     });
@@ -465,14 +532,13 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && pathname === '/api/telegram-test') {
-    const bundle = await getFullMarketBundle();
-    const scan = analyze15mWithAutoHtfPoi(bundle);
-    const msg = formatMinimalTelegramSignal(scan);
+    const bundle = await getFullReal15mBundle();
+    const scan = evaluateLive15mWithSmartEntryZone(bundle);
+    const msg = formatCleanTelegramSignal(scan, store.trade_lock_state.stats);
     const tgRes = await sendTelegramMessage(msg, true);
     return sendJson(res, 200, tgRes);
   }
 
-  // Serve Frontend UI
   const htmlPath = path.join(PUBLIC_DIR, 'index.html');
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
   res.end(fs.readFileSync(htmlPath, 'utf8'));
@@ -480,9 +546,9 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`========================================================================`);
-  console.log(` TAKERU ANALYZER AI v9.0 LIVE ON http://127.0.0.1:${PORT}`);
-  console.log(` - Timeframe: 15m Primary + Auto 1H & 4H POI (FVG, Body OB, IFVG)`);
-  console.log(` - Telegram Signal: Auto >= 75% | Minimalist Format | 1:2 RR Hold`);
-  console.log(` - Auto-Backtest & AI Train: Every 2 Hours + Render Restart Protection`);
+  console.log(` TAKERU ANALYZER AI v10.0 LIVE ON http://127.0.0.1:${PORT}`);
+  console.log(` - Timeframe: 15m Only | Real-Chart 15m Backtest & Auto-Select`);
+  console.log(` - Smart Entry Filter: Waits for verified 15m Entry Zone (>= 75%)`);
+  console.log(` - Real Data: Swissquote/TV Live Prices + Yahoo Finance Live News`);
   console.log(`========================================================================`);
 });

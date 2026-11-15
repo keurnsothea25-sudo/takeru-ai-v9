@@ -12,9 +12,10 @@ const DEFAULT_CONFIG = {
   port: Number(process.env.PORT || 3000),
   host: process.env.HOST || '0.0.0.0',
   renderExternalUrl: process.env.RENDER_EXTERNAL_URL || '',
-  autoScanSeconds: 5,
-  autoTrainIntervalMs: 2 * 60 * 60 * 1000, // រៀងរាល់ 2 ម៉ោងស្វ័យប្រវត្តិ
-  minSignalConfidence: 75.0,               // ទម្លាក់ចូល Telegram ពេល >= 75%
+  autoScanSeconds: 15,                     // ស្កេនរៀងរាល់ 15 វិនាទីម្ដង
+  autoTrainIntervalMs: 2 * 60 * 60 * 1000, // Auto-Backtest & Train រៀងរាល់ 2 ម៉ោង
+  minSignalConfidence: 75.0,               // ទម្លាក់ Signal ពេល Confidence >= 75% និងមាន Entry Zone ល្អ
+  maxSlDollars: 6.0,
   telegram: {
     botToken: process.env.TELEGRAM_BOT_TOKEN || '8569884229:AAFvXpiRt1TErXTfOa4ju2WIQuStUeJpvjI',
     chatId: process.env.TELEGRAM_CHAT_ID || '-1004290149125',
@@ -22,7 +23,6 @@ const DEFAULT_CONFIG = {
   },
   supabase: {
     url: process.env.SUPABASE_URL || '',
-    anonKey: process.env.SUPABASE_ANON_KEY || '',
     databaseUrl: process.env.DATABASE_URL || ''
   }
 };
@@ -49,7 +49,6 @@ function getConfig() {
       ...DEFAULT_CONFIG.supabase,
       ...(saved.supabase || {}),
       url: process.env.SUPABASE_URL || saved?.supabase?.url || '',
-      anonKey: process.env.SUPABASE_ANON_KEY || saved?.supabase?.anonKey || '',
       databaseUrl: process.env.DATABASE_URL || saved?.supabase?.databaseUrl || ''
     }
   };
@@ -57,7 +56,7 @@ function getConfig() {
 
 function updateConfig(partial = {}) {
   const current = getConfig();
-  const updated = {
+  const next = {
     ...current,
     minSignalConfidence: Number(partial.minSignalConfidence || current.minSignalConfidence || 75),
     telegram: {
@@ -69,8 +68,8 @@ function updateConfig(partial = {}) {
       ...(partial.supabase || {})
     }
   };
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(updated, null, 2), 'utf8');
-  return updated;
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(next, null, 2), 'utf8');
+  return next;
 }
 
 module.exports = {

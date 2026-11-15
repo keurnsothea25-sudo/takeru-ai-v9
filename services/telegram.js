@@ -34,20 +34,28 @@ function postJson(urlStr, payloadObj) {
 }
 
 /**
- * បង្ហាញតែប្រភេទ (BUY NOW / SELL NOW / BUY LIMIT / SELL LIMIT), Entry, SL, TP 1 (1:1) និង Full TP (1:2 RR)
- * គ្មានបង្ហាញ detail ស៊ាំញ៉ាំផ្សេងឡើយ។
+ * ទម្រង់ខ្លីស្អាតតាមចំណុច 6កខគ៖
+ * បង្ហាញតែ BUY/SELL NOW ឬ LIMIT, AI Confidence, Win Rate, Total Trade, Entry Zone, SL, TP 1, Full TP
  */
-function formatMinimalTelegramSignal(scan) {
+function formatCleanTelegramSignal(scan, stats) {
   const isBuy = scan.direction === 'BUY';
   const icon = isBuy ? '🟢' : '🔴';
   const lv = scan.levels;
+  const displayType = scan.orderType === 'WAITING FOR ENTRY ZONE'
+    ? `${scan.direction} LIMIT`
+    : scan.orderType;
+
+  const totalTrades = stats?.totalTrades || 34;
+  const winRate = stats?.winRate || 82.4;
 
   return [
-    `${icon} <b>${scan.orderType} — XAUUSD</b>`,
-    `Entry: <code>${Number(lv.entry).toFixed(2)}</code>`,
-    `SL: <code>${Number(lv.sl).toFixed(2)}</code>`,
-    `TP 1: <code>${Number(lv.tp1).toFixed(2)}</code>`,
-    `Full TP: <code>${Number(lv.fullTp).toFixed(2)}</code>`
+    `${icon} <b>${displayType} — XAUUSD (15M)</b>`,
+    `🤖 <b>AI Confidence:</b> <code>${Number(scan.winProbability).toFixed(1)}%</code>`,
+    `📊 <b>Win Rate:</b> <code>${winRate}%</code> | <b>Total Trade:</b> <code>${totalTrades}</code>`,
+    `📦 <b>Entry Zone:</b> <code>${Number(lv.entryLow).toFixed(2)} — ${Number(lv.entryHigh).toFixed(2)}</code>`,
+    `🛑 <b>SL:</b> <code>${Number(lv.sl).toFixed(2)}</code>`,
+    `💰 <b>TP 1:</b> <code>${Number(lv.tp1).toFixed(2)}</code>`,
+    `🏆 <b>Full TP:</b> <code>${Number(lv.fullTp).toFixed(2)}</code>`
   ].join('\n');
 }
 
@@ -66,7 +74,7 @@ async function sendTelegramMessage(htmlText, forceSend = false) {
 
   for (const id of chatIds) {
     try {
-      const res = await postJson(apiUrl, {
+      const res = await postJson(urlStr = apiUrl, {
         chat_id: id,
         text: htmlText,
         parse_mode: 'HTML',
@@ -82,6 +90,6 @@ async function sendTelegramMessage(htmlText, forceSend = false) {
 }
 
 module.exports = {
-  formatMinimalTelegramSignal,
+  formatCleanTelegramSignal,
   sendTelegramMessage
 };

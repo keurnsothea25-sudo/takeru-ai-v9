@@ -1,7 +1,7 @@
 {
-  "name": "takeru-analyzer-ai-pro",
-  "version": "9.0.0",
-  "description": "TAKERU Analyzer AI — 15m Auto-Scan + Auto 1H/4H POI + 2h Auto-Train",
+  "name": "takeru-analyzer-ai-v10",
+  "version": "10.0.0",
+  "description": "TAKERU Analyzer AI v10.0 — 15m Real-Chart Backtest & Smart Entry Zone Terminal",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
