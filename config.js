@@ -14,7 +14,7 @@ const DEFAULT_CONFIG = {
   renderExternalUrl: process.env.RENDER_EXTERNAL_URL || '',
   autoScanSeconds: 15,
   autoTrainIntervalMs: 2 * 60 * 60 * 1000,
-  minSignalConfidence: 70.0, // Auto-drop ទាំង 5m និង 15m ពេល Confidence >= 70%
+  minSignalConfidence: 75.0, // Auto-drop ទាំង 5m និង 15m ពេល Confidence >= 70%
   telegram: {
     botToken: process.env.TELEGRAM_BOT_TOKEN || '8569884229:AAFvXpiRt1TErXTfOa4ju2WIQuStUeJpvjI',
     chatId: process.env.TELEGRAM_CHAT_ID || '-1004290149125',
