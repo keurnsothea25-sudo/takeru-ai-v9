@@ -1,16 +1,16 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="km">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TAKERU Analyzer AI v10.0 — 15m Real-Chart Backtest &amp; Smart Entry Terminal</title>
+  <title>TAKERU Analyzer AI v12.0 — Institutional Matrix Terminal (5m/1H &amp; 15m/4H)</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=JetBrains+Mono:wght@500;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=JetBrains+Mono:wght@500;700;800&family=Kantumruy+Pro:wght@400;600;700&display=swap');
     :root {
-      --bg: #050811;
-      --sidebar: #080d1a;
-      --card: rgba(13, 20, 38, 0.94);
-      --inner: #070b15;
+      --bg: #04070f;
+      --sidebar: #070c18;
+      --card: rgba(10, 16, 30, 0.94);
+      --inner: #060a13;
       --text: #f8fafc;
       --muted: #64748b;
       --cyan: #00d2ff;
@@ -18,34 +18,80 @@
       --gold: #f5b700;
       --emerald: #10b981;
       --crimson: #ff2a5f;
-      --border: rgba(148, 163, 184, 0.14);
-      --grad: linear-gradient(135deg, #00d2ff 0%, #2563eb 55%, #6a5acd 100%);
+      --purple: #a855f7;
+      --border: rgba(0, 210, 255, 0.16);
+      --grad: linear-gradient(135deg, #00d2ff 0%, #2563eb 55%, #4f46e5 100%);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background: var(--bg);
+      background-color: var(--bg);
+      background-image:
+        linear-gradient(rgba(0, 210, 255, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 210, 255, 0.04) 1px, transparent 1px);
+      background-size: 28px 28px;
       color: var(--text);
-      font-family: 'Inter', sans-serif;
+      font-family: 'Inter', 'Kantumruy Pro', sans-serif;
       min-height: 100vh;
       display: flex;
       flex-direction: column;
+      overflow-x: hidden;
     }
-    .ticker-bar {
-      background: #03060c;
+
+    /* SMOOTH INFINITE RUNNING MARQUEE TICKER (NO SCROLLBAR) */
+    .ticker-wrap {
+      width: 100%;
+      background: #02050a;
       border-bottom: 1px solid var(--border);
-      padding: 7px 14px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 11.5px;
-      overflow-x: auto;
+      overflow: hidden;
       white-space: nowrap;
-      gap: 16px;
+      padding: 8px 0;
+      position: relative;
+      z-index: 30;
     }
-    .shell { display: flex; flex: 1; }
+    .ticker-track {
+      display: inline-flex;
+      align-items: center;
+      gap: 34px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      animation: tickerSlide 28s linear infinite;
+      padding-left: 20px;
+    }
+    .ticker-wrap:hover .ticker-track {
+      animation-play-state: paused;
+    }
+    @keyframes tickerSlide {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+
+    /* FULL-SCREEN AUTH & ADMIN APPROVAL GATE */
+    .auth-gate {
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(circle at 50% 20%, rgba(0,210,255,0.14), rgba(4,7,15,0.98) 70%);
+      backdrop-filter: blur(12px);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .auth-box {
+      width: 100%;
+      max-width: 430px;
+      background: var(--card);
+      border: 1px solid var(--cyan);
+      border-radius: 18px;
+      padding: 24px;
+      box-shadow: 0 20px 55px rgba(0, 0, 0, 0.85);
+    }
+
+    /* MAIN SHELL */
+    .app-shell { display: none; flex: 1; }
+    .app-shell.unlocked { display: flex; }
     .sidebar {
-      width: 240px;
+      width: 248px;
       background: var(--sidebar);
       border-right: 1px solid var(--border);
       padding: 14px 12px;
@@ -66,16 +112,39 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      white-space: nowrap;
+      transition: 0.2s;
     }
-    .nav-btn.active { background: var(--grad); color: #fff; }
-    .main { flex: 1; padding: 14px; max-width: 1380px; margin: 0 auto; width: 100%; }
+    .nav-btn:hover { border-color: var(--border); color: #fff; }
+    .nav-btn.active { background: var(--grad); color: #fff; box-shadow: 0 4px 15px rgba(0,210,255,0.25); }
+    .main { flex: 1; padding: 14px; max-width: 1400px; margin: 0 auto; width: 100%; }
     .view { display: none; }
     .view.active { display: block; }
+
+    /* TIMEFRAME SELECTOR PILLS (5M / 15M) */
+    .tf-switch {
+      display: inline-flex;
+      background: var(--inner);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 3px;
+      gap: 4px;
+    }
+    .tf-btn {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      padding: 7px 14px;
+      border-radius: 8px;
+      font-weight: 800;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .tf-btn.active { background: var(--grad); color: #fff; }
+
     .card {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 16px;
+      border-radius: 15px;
       padding: 15px;
       margin-bottom: 14px;
     }
@@ -97,13 +166,13 @@
     }
     .kpi { background: var(--inner); border: 1px solid var(--border); border-radius: 12px; padding: 11px 13px; }
     .kpi-lbl { font-size: 10px; color: var(--muted); font-weight: 800; text-transform: uppercase; }
-    .kpi-val { font-size: 18px; font-weight: 900; font-family: 'JetBrains Mono', monospace; color: var(--cyan); margin-top: 3px; }
+    .kpi-val { font-size: 15.5px; font-weight: 900; font-family: 'JetBrains Mono', monospace; color: var(--cyan); margin-top: 3px; }
     .grid-2 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; }
     .grid-eq { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     .price-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
     .p-box { background: var(--inner); border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
     .p-lbl { font-size: 10px; color: var(--muted); font-weight: 800; }
-    .p-val { font-size: 16.5px; font-weight: 900; font-family: 'JetBrains Mono', monospace; margin-top: 3px; }
+    .p-val { font-size: 15.5px; font-weight: 900; font-family: 'JetBrains Mono', monospace; margin-top: 3px; }
     .btn {
       background: var(--grad);
       color: #fff;
@@ -124,164 +193,224 @@
       font-size: 12px;
       cursor: pointer;
     }
-    /* Website-Only Bilingual Ask Follow-Up Widget */
-    .followup-card {
-      margin-top: 14px;
-      background: #0b0e14;
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 16px;
-      padding: 16px;
-    }
-    .lang-pill {
-      background: #12161f;
-      border: 1px solid rgba(255,255,255,0.14);
-      color: #94a3b8;
-      padding: 4px 11px;
-      border-radius: 999px;
-      font-size: 11.5px;
-      font-weight: 800;
-      cursor: pointer;
-    }
-    .lang-pill.active { background: #d99b26; color: #050811; border-color: #d99b26; }
-    .q-pill {
-      background: #12161f;
-      border: 1px solid rgba(255,255,255,0.12);
-      color: #f8fafc;
-      padding: 9px 15px;
-      border-radius: 999px;
+    .input {
+      background: var(--inner);
+      border: 1px solid var(--border);
+      color: #fff;
+      padding: 10px 12px;
+      border-radius: 9px;
+      width: 100%;
+      margin-top: 4px;
       font-size: 12.5px;
-      font-weight: 700;
-      cursor: pointer;
-      display: block;
-      margin-top: 7px;
-      text-align: left;
     }
-    .q-pill:hover { border-color: #d99b26; }
-    .scroll-table { max-height: 320px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; }
+    .scroll-table { max-height: 360px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; }
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
     th, td { padding: 9px 10px; text-align: left; border-bottom: 1px solid var(--border); }
     th { font-size: 10.5px; color: var(--muted); text-transform: uppercase; background: var(--sidebar); position: sticky; top: 0; }
-    .input { background: var(--inner); border: 1px solid var(--border); color: #fff; padding: 9px 11px; border-radius: 9px; width: 100%; margin-top: 4px; font-size: 12.5px; }
     @media (max-width: 960px) {
       .grid-2, .grid-eq { grid-template-columns: 1fr; }
-      .shell { flex-direction: column; }
+      .app-shell.unlocked { flex-direction: column; }
       .sidebar { width: 100%; flex-direction: row; overflow-x: auto; padding: 8px 10px; }
-      .main { padding: 10px; }
     }
   </style>
 </head>
 <body>
 
-  <!-- Real-Time Live Ticker -->
-  <div class="ticker-bar">
-    <div style="display:flex; gap:16px;">
-      <span><b>XAU/USD</b> <span id="tkXau" style="color:var(--emerald);">--</span></span>
-      <span><b>XAG/USD</b> <span id="tkXag" style="color:var(--emerald);">--</span></span>
-      <span><b>DXY</b> <span id="tkDxy" style="color:var(--crimson);">--</span></span>
-      <span><b>USD/JPY</b> <span id="tkJpy" style="color:var(--crimson);">--</span></span>
-      <span><b>EUR/USD</b> <span id="tkEur" style="color:var(--emerald);">--</span></span>
+  <!-- 1. SMOOTH RUNNING INFINITE TICKER BAR -->
+  <div class="ticker-wrap">
+    <div class="ticker-track" id="marqueeTrack">
+      <span><b>XAU/USD:</b> <span class="tk-xau" style="color:var(--emerald);">Loading...</span></span>
+      <span><b>1H TREND (5M):</b> <span class="tk-1h" style="color:var(--cyan);">🟢 BULLISH BOS</span></span>
+      <span><b>4H TREND (15M):</b> <span class="tk-4h" style="color:var(--gold);">🟢 BULLISH SYNC</span></span>
+      <span><b>XAG/USD:</b> <span class="tk-xag" style="color:var(--emerald);">--</span></span>
+      <span><b>DXY:</b> <span class="tk-dxy" style="color:var(--crimson);">--</span></span>
+      <span><b>USD/JPY:</b> <span class="tk-jpy" style="color:var(--crimson);">--</span></span>
+      <span><b>EUR/USD:</b> <span class="tk-eur" style="color:var(--emerald);">--</span></span>
+      <!-- Duplicate set for seamless loop -->
+      <span><b>XAU/USD:</b> <span class="tk-xau" style="color:var(--emerald);">Loading...</span></span>
+      <span><b>1H TREND (5M):</b> <span class="tk-1h" style="color:var(--cyan);">🟢 BULLISH BOS</span></span>
+      <span><b>4H TREND (15M):</b> <span class="tk-4h" style="color:var(--gold);">🟢 BULLISH SYNC</span></span>
+      <span><b>XAG/USD:</b> <span class="tk-xag" style="color:var(--emerald);">--</span></span>
+      <span><b>DXY:</b> <span class="tk-dxy" style="color:var(--crimson);">--</span></span>
+      <span><b>USD/JPY:</b> <span class="tk-jpy" style="color:var(--crimson);">--</span></span>
+      <span><b>EUR/USD:</b> <span class="tk-eur" style="color:var(--emerald);">--</span></span>
     </div>
-    <div id="ppClockTop" style="color:var(--cyan);">Phnom Penh --:--:--</div>
   </div>
 
-  <div class="shell">
-    <!-- Compact Mobile-Friendly Navigation -->
+  <!-- 2. MANDATORY LOGIN / REGISTER / ADMIN APPROVAL GATE (CLEAN INPUTS) -->
+  <div class="auth-gate" id="authGate">
+    <div class="auth-box">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <div>
+          <div style="font-size:11px; color:var(--cyan); font-weight:800;">STYLE B • MATRIX INSTITUTIONAL</div>
+          <h2 style="font-size:19px; font-weight:900;">🔐 TAKERU Analyzer AI</h2>
+        </div>
+        <span style="background:rgba(0,210,255,0.12); color:var(--cyan); padding:4px 9px; border-radius:8px; font-size:11px; font-weight:800;">v12.0</span>
+      </div>
+
+      <div style="display:flex; gap:6px; margin-bottom:14px;">
+        <button class="btn" id="tabLoginBtn" style="flex:1;" onclick="switchAuthMode('login')">Login</button>
+        <button class="btn-outline" id="tabRegBtn" style="flex:1;" onclick="switchAuthMode('register')">Register</button>
+      </div>
+
+      <div id="formLogin">
+        <div style="margin-bottom:10px;">
+          <label style="font-size:11px; color:var(--muted);">Email Address</label>
+          <input type="email" id="loginEmail" class="input" placeholder="Enter your email" autocomplete="off" />
+        </div>
+        <div style="margin-bottom:14px;">
+          <label style="font-size:11px; color:var(--muted);">Password</label>
+          <input type="password" id="loginPass" class="input" placeholder="Enter your password" autocomplete="off" />
+        </div>
+        <button class="btn" style="width:100%; padding:11px;" onclick="submitLogin()">🚀 Login to Institutional Terminal</button>
+      </div>
+
+      <div id="formRegister" style="display:none;">
+        <div style="margin-bottom:8px;">
+          <label style="font-size:11px; color:var(--muted);">Full Name</label>
+          <input type="text" id="regName" class="input" placeholder="Enter your name" autocomplete="off" />
+        </div>
+        <div style="margin-bottom:8px;">
+          <label style="font-size:11px; color:var(--muted);">Email Address</label>
+          <input type="email" id="regEmail" class="input" placeholder="Enter your email" autocomplete="off" />
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:11px; color:var(--muted);">Password</label>
+          <input type="password" id="regPass" class="input" placeholder="Create password" autocomplete="off" />
+        </div>
+        <button class="btn" style="width:100%; padding:11px;" onclick="submitRegister()">📩 Register &amp; Request OTP</button>
+      </div>
+
+      <div id="formOtp" style="display:none;">
+        <div style="font-size:12.5px; color:var(--gold); margin-bottom:8px;" id="otpNotice"></div>
+        <label style="font-size:11px; color:var(--muted);">6-Digit Email OTP Code</label>
+        <input type="text" id="otpInput" class="input" placeholder="000000" style="font-size:18px; text-align:center; letter-spacing:4px; font-weight:900;" />
+        <button class="btn" style="width:100%; margin-top:12px; padding:11px;" onclick="submitVerifyOtp()">✅ Verify Email OTP</button>
+      </div>
+
+      <div id="formPending" style="display:none; text-align:center; padding:12px 4px;">
+        <div style="font-size:32px; margin-bottom:8px;">⏳</div>
+        <h3 style="font-size:16px; color:var(--gold); margin-bottom:6px;">រង់ចាំការអនុម័តពី Admin (Pending Approval)</h3>
+        <p style="font-size:12.5px; color:#cbd5e1; line-height:1.6;">
+          គណនីរបស់អ្នកបានចុះឈ្មោះរួចរាល់ហើយ! សូមរង់ចាំឱ្យ <b>Admin</b> ចុច <b>Approve</b> សិន ទើបអាចចូលប្រើប្រាស់បាន។
+        </p>
+        <button class="btn-outline" style="margin-top:12px; width:100%;" onclick="switchAuthMode('login')">🔙 ត្រឡប់ទៅផ្ទាំង Login</button>
+      </div>
+
+      <div id="authErrorMsg" style="color:var(--crimson); font-size:12px; margin-top:10px; text-align:center; font-weight:700;"></div>
+    </div>
+  </div>
+
+  <!-- 3. UNLOCKED TERMINAL SHELL -->
+  <div class="app-shell" id="appShell">
     <aside class="sidebar">
-      <button class="nav-btn active" onclick="showTab('terminal', this)"><span>⚡ 15m Auto-Scan</span><span style="color:var(--emerald); margin-left:6px;">15s</span></button>
-      <button class="nav-btn" onclick="showTab('concepts', this)"><span>🧬 15m Real Backtest</span></button>
+      <div style="padding:6px 8px 12px; border-bottom:1px solid var(--border); margin-bottom:6px;">
+        <div style="font-size:10px; color:var(--cyan); font-weight:800;">STYLE B • MATRIX GRID</div>
+        <div style="font-size:14.5px; font-weight:900;">TAKERU AI v12.0</div>
+        <div style="font-size:11px; color:var(--emerald); margin-top:2px;" id="userBadgeText">User</div>
+      </div>
+
+      <button class="nav-btn active" onclick="showTab('terminal', this)"><span>⚡ Live Scanner (5m/15m)</span></button>
+      <button class="nav-btn" onclick="showTab('zones', this)"><span>🎯 Strong Zone Radar</span></button>
+      <button class="nav-btn" onclick="showTab('backtest', this)"><span>🧬 5m/15m Real Backtest</span></button>
       <button class="nav-btn" onclick="showTab('corr-news', this)"><span>🌐 Real Corr &amp; News</span></button>
-      <button class="nav-btn" onclick="showTab('tools-config', this)"><span>🧮 Tools &amp; Config</span></button>
+      <button class="nav-btn" onclick="showTab('config', this)"><span>⚙️ Tools &amp; Config</span></button>
+      <button class="nav-btn" id="navAdminBtn" style="display:none; border-color:var(--gold); color:var(--gold);" onclick="showTab('admin', this)">
+        <span>👑 Admin Approval</span>
+      </button>
+      <button class="nav-btn" style="margin-top:auto; color:var(--crimson);" onclick="logoutUser()"><span>🚪 Logout</span></button>
     </aside>
 
     <main class="main">
-      <!-- ================= TAB 1: 15M LIVE AUTO-SCAN + SMART ENTRY ZONE + SCAN HISTORY ================= -->
+      <!-- Global Dual-Timeframe Switcher Bar -->
+      <div class="card" style="padding:11px 15px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <span style="font-size:12px; font-weight:800; color:var(--muted);">SELECT SCANNER TIMEFRAME:</span>
+          <div class="tf-switch">
+            <button class="tf-btn" id="btnTf5m" onclick="selectTimeframe('5m')">⚡ 5m (Look 1H Trend)</button>
+            <button class="tf-btn active" id="btnTf15m" onclick="selectTimeframe('15m')">🏛️ 15m (Look 4H Trend)</button>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:14px; font-size:12px; font-family:'JetBrains Mono',monospace;">
+          <span>Auto-Drop Both TFs: <b style="color:var(--emerald);">&ge; 70%</b></span>
+          <span>Next Scan: <b id="countdownText" style="color:var(--cyan);">15</b>s</span>
+        </div>
+      </div>
+
+      <!-- TAB 1: DUAL-TF LIVE SCANNER TERMINAL -->
       <section class="view active" id="tab-terminal">
         <div class="kpi-row">
           <div class="kpi">
-            <div class="kpi-lbl">15m Auto-Scan Loop</div>
-            <div class="kpi-val"><span id="countdownText">15</span>s</div>
+            <div class="kpi-lbl" id="lblHtfKpi">HTF Trend (4H)</div>
+            <div class="kpi-val" id="valHtfKpi" style="font-size:13.5px; color:var(--emerald);">BULLISH BOS</div>
           </div>
           <div class="kpi">
             <div class="kpi-lbl">Entry Zone Filter</div>
-            <div class="kpi-val" id="zoneFilterBadge" style="font-size:13.5px; color:var(--gold);">WAITING FOR ZONE</div>
+            <div class="kpi-val" id="zoneFilterBadge" style="font-size:13px; color:var(--gold);">WAITING</div>
           </div>
           <div class="kpi">
-            <div class="kpi-lbl">Win Rate &amp; Total Trade</div>
-            <div class="kpi-val" id="winRateBadge" style="font-size:15px; color:var(--emerald);">--% (0)</div>
+            <div class="kpi-lbl">ADX (14) &amp; RSI (14)</div>
+            <div class="kpi-val" id="adxRsiBadge" style="font-size:13.5px;">ADX -- | RSI --</div>
           </div>
           <div class="kpi">
-            <div class="kpi-lbl">Trade Lock (1:2 RR Hold)</div>
-            <div class="kpi-val" id="lockBadge" style="font-size:14px;">IDLE</div>
+            <div class="kpi-lbl">TF Win Rate &amp; Trades</div>
+            <div class="kpi-val" id="winRateBadge" style="font-size:14px; color:var(--emerald);">--% (0)</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-lbl">Auto-Drop Lock</div>
+            <div class="kpi-val" id="lockBadge" style="font-size:13.5px;">IDLE</div>
           </div>
         </div>
 
         <div class="card">
           <div class="card-head">
             <div>
-              <h3 style="font-size:15px;">⚡ XAU/USD (Gold) 15m Real-Chart Scanner — Waits for High-Prob Entry Zone</h3>
-              <div style="font-size:11.5px; color:var(--muted);" id="activeModelLabel">Loading real 15m backtested models...</div>
+              <h3 style="font-size:15px;" id="scannerHeaderTitle">🏛️ XAU/USD 15m Scanner (Aligned with 4H Trend)</h3>
+              <div style="font-size:11.5px; color:var(--muted);" id="activeModelLabel">Loading real backtested model...</div>
             </div>
             <div style="display:flex; gap:6px;">
-              <button class="btn-outline" onclick="unlockTradeNow()">🔓 Reset Lock</button>
-              <button class="btn" onclick="testTelegramSignal()">📲 Test Telegram Card</button>
+              <button class="btn-outline" onclick="unlockTradeNow()">🔓 Reset TF Lock</button>
+              <button class="btn" onclick="testTelegramSignal()">📲 Test Styled Telegram Card</button>
             </div>
           </div>
 
           <div class="grid-2">
-            <canvas id="chart15mCanvas" width="820" height="400" style="width:100%; border-radius:12px; background:#04070e; border:1px solid var(--border);"></canvas>
+            <canvas id="chartCanvas" width="820" height="400" style="width:100%; border-radius:12px; background:#03060c; border:1px solid var(--border);"></canvas>
 
             <div style="background:var(--inner); border:2px solid var(--cyan); border-radius:14px; padding:14px;">
               <div style="display:flex; justify-content:space-between; align-items:center;">
-                <span id="sigOrderType" style="font-size:18px; font-weight:900; color:var(--gold);">⏳ WAITING FOR ENTRY ZONE</span>
+                <span id="sigOrderType" style="font-size:16.5px; font-weight:900; color:var(--gold);">⏳ WAITING FOR ENTRY ZONE</span>
                 <span id="sigConfidence" style="font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:900; color:var(--cyan);">--%</span>
               </div>
-              <div style="font-size:11px; color:var(--muted); margin:5px 0 10px;">
-                Only drops to Telegram when <b>Entry Zone is ready &amp; Confidence &ge; 75%</b>
+              <div style="font-size:11px; color:var(--muted); margin:4px 0 10px;">
+                Auto-drops to shared Telegram channel for <b>both 5m &amp; 15m when Confidence &ge; 70%</b>
               </div>
 
               <div class="price-grid">
                 <div class="p-box" style="grid-column:span 2;">
-                  <div class="p-lbl">📦 15M ENTRY ZONE</div>
+                  <div class="p-lbl">📦 STRONG ENTRY ZONE</div>
                   <div class="p-val" id="valEntryZone" style="color:var(--cyan);">-- — --</div>
                 </div>
-                <div class="p-box"><div class="p-lbl">🛑 STOP LOSS (SL)</div><div class="p-val" id="valSl" style="color:var(--crimson);">--</div></div>
+                <div class="p-box"><div class="p-lbl">🛑 MODEL DYNAMIC SL</div><div class="p-val" id="valSl" style="color:var(--crimson);">--</div></div>
                 <div class="p-box"><div class="p-lbl">💰 TP 1 (1:1 RR)</div><div class="p-val" id="valTp1" style="color:var(--emerald);">--</div></div>
-                <div class="p-box" style="grid-column:span 2;"><div class="p-lbl">🏆 FULL TP (1:2 RR HOLD TO TP OR SL)</div><div class="p-val" id="valFullTp" style="color:var(--gold);">--</div></div>
+                <div class="p-box"><div class="p-lbl">🏆 FULL TP (1:2 RR)</div><div class="p-val" id="valFullTp" style="color:var(--gold);">--</div></div>
+                <div class="p-box"><div class="p-lbl">🧲 CLEAR DOL TARGET</div><div class="p-val" id="valClearDol" style="color:var(--purple);">--</div></div>
               </div>
 
-              <div style="margin-top:10px; padding:9px; border-radius:9px; background:rgba(0,210,255,0.07); font-size:11.5px; font-family:monospace;">
-                <div style="color:var(--muted); margin-bottom:3px;">📲 Exact Telegram Signal Card Preview:</div>
-                <div id="tgPreviewBox" style="white-space:pre-line; color:#fff; font-weight:700;"></div>
+              <div style="margin-top:10px; padding:9px; border-radius:9px; background:rgba(0,210,255,0.06); font-size:11px; font-family:'JetBrains Mono',monospace;">
+                <div style="color:var(--cyan); margin-bottom:4px; font-weight:800;">📲 Styled Telegram Card Preview:</div>
+                <div id="tgPreviewBox" style="white-space:pre-line; color:#fff;"></div>
               </div>
-            </div>
-          </div>
-
-          <!-- WEBSITE-ONLY BILINGUAL ASK FOLLOW-UP WIDGET (7ក) -->
-          <div class="followup-card">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-              <span style="font-size:11px; font-weight:800; color:#d99b26; letter-spacing:1px;">— ASK FOLLOW-UP (WEBSITE ONLY)</span>
-              <div style="display:flex; gap:5px;">
-                <button class="lang-pill active" id="btnKm" onclick="switchLang('km')">🇰🇭 ខ្មែរ</button>
-                <button class="lang-pill" id="btnEn" onclick="switchLang('en')">🇬🇧 English</button>
-              </div>
-            </div>
-            <div id="followTitle" style="font-size:16px; font-weight:800; margin-bottom:8px;">Why Buy/Sell Response</div>
-            <div id="followBody" style="font-size:13.5px; line-height:1.7; color:#d1d5db; margin-bottom:10px;"></div>
-            <div>
-              <button class="q-pill" onclick="setFollowTopic('invalidate')">What invalidates this setup?</button>
-              <button class="q-pill" onclick="setFollowTopic('opposite')">What about the opposite direction?</button>
-              <button class="q-pill" onclick="setFollowTopic('trigger')">Best entry trigger to watch?</button>
             </div>
           </div>
         </div>
 
-        <!-- Helper 1គ: Scrollable Scan History -->
         <div class="card">
-          <div class="card-head"><h3 style="font-size:14.5px;">📜 Triggered 15m Signal History (Entry Zone / SL / TP 1 / Full TP)</h3></div>
+          <div class="card-head"><h3 style="font-size:14.5px;">📜 Triggered Signal History (Both 5m &amp; 15m Auto-Drops &ge; 70%)</h3></div>
           <div class="scroll-table">
             <table>
               <thead>
-                <tr><th>Time</th><th>Signal</th><th>AI Conf</th><th>Entry Zone</th><th>SL</th><th>TP 1</th><th>Full TP (1:2)</th></tr>
+                <tr><th>Time</th><th>TF</th><th>Signal</th><th>AI Conf</th><th>Entry Zone</th><th>SL</th><th>TP 1</th><th>Full TP</th></tr>
               </thead>
               <tbody id="historyTbody"></tbody>
             </table>
@@ -289,22 +418,40 @@
         </div>
       </section>
 
-      <!-- ================= TAB 2: REAL 15M CHART MULTI-CONCEPT BACKTESTER & 2H AUTO-TRAINER ================= -->
-      <section class="view" id="tab-concepts">
+      <!-- TAB 2: STRONG ENTRY ZONE RADAR SCANNER -->
+      <section class="view" id="tab-zones">
         <div class="card">
           <div class="card-head">
             <div>
-              <h3 style="font-size:15px;">🧬 Real 15m Chart Multi-Strategy Backtester &amp; 2-Hour Auto-Trainer (`train.js`)</h3>
-              <div style="font-size:11.5px; color:var(--muted);">
-                Tests 12 quantitative &amp; price-action models on real historical 15m XAU/USD candles and <b>Auto-Selects the highest Win Rate &amp; Profitable models</b>.
-              </div>
+              <h3 style="font-size:15px;">🎯 Strong Entry Zone Radar Scanner (100% Real Data — 5m &amp; 15m)</h3>
+              <div style="font-size:11.5px; color:var(--muted);">Scans unmitigated Institutional FVG + Order Block zones aligned with 1H/4H Trend</div>
             </div>
-            <button class="btn" id="btnTrainNow" onclick="forceTrainNow()">🚀 Run Real 15m Backtest &amp; Train AI Now</button>
+            <div style="display:flex; gap:6px;">
+              <button class="btn-outline" onclick="selectTimeframe('5m')">Scan 5m (1H Trend)</button>
+              <button class="btn" onclick="selectTimeframe('15m')">Scan 15m (4H Trend)</button>
+            </div>
+          </div>
+          <div id="strongZonesGrid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(290px, 1fr)); gap:12px;"></div>
+        </div>
+      </section>
+
+      <!-- TAB 3: DUAL TIMEFRAME REAL BACKTESTER -->
+      <section class="view" id="tab-backtest">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h3 style="font-size:15px;" id="btTitle">🧬 Real Chart Backtester — 15m Execution (4H Trend)</h3>
+              <div style="font-size:11.5px; color:var(--muted);">Finds and Auto-Selects the highest Win Rate &amp; Profitable models separately for 5m and 15m</div>
+            </div>
+            <div style="display:flex; gap:6px;">
+              <button class="btn-outline" onclick="forceTrainTf('5m')">🚀 Backtest &amp; Train 5m (1H)</button>
+              <button class="btn" onclick="forceTrainTf('15m')">🚀 Backtest &amp; Train 15m (4H)</button>
+            </div>
           </div>
           <div class="scroll-table">
             <table>
               <thead>
-                <tr><th>Rank</th><th>Auto-Status</th><th>15m Strategy Model</th><th>Win Rate</th><th>Total Trades</th><th>Profit Factor</th><th>Net Profit (1:2 RR)</th></tr>
+                <tr><th>Rank</th><th>TF</th><th>Auto-Status</th><th>Strategy Model</th><th>Win Rate</th><th>Trades</th><th>Profit Factor</th><th>Net Profit</th></tr>
               </thead>
               <tbody id="conceptsTbody"></tbody>
             </table>
@@ -312,65 +459,44 @@
         </div>
       </section>
 
-      <!-- ================= TAB 3: REAL LIVE CORRELATION & REAL LIVE NEWS ================= -->
+      <!-- TAB 4: CORRELATION & NEWS -->
       <section class="view" id="tab-corr-news">
         <div class="grid-eq">
           <div class="card">
-            <div class="card-head">
-              <h3 style="font-size:15px;">🌐 Real-Time Gold Correlation (`XAG/USD`, `DXY`, `USD/JPY`, `EUR/USD`)</h3>
-              <span id="corrAlignBadge" style="color:var(--emerald); font-size:12px; font-weight:800;"></span>
-            </div>
+            <div class="card-head"><h3 style="font-size:15px;">🌐 Real-Time Gold Correlation</h3><span id="corrAlignBadge" style="color:var(--emerald); font-size:12px; font-weight:800;"></span></div>
             <div id="corrList" style="display:flex; flex-direction:column; gap:8px;"></div>
           </div>
-
           <div class="card">
-            <div class="card-head">
-              <h3 style="font-size:15px;">📰 Real-Time Gold &amp; USD News (Yahoo Finance Live API)</h3>
-              <span id="newsBiasBadge" style="color:var(--gold); font-size:12px; font-weight:800;"></span>
-            </div>
+            <div class="card-head"><h3 style="font-size:15px;">📰 Real-Time Gold News (Yahoo Finance Live)</h3><span id="newsBiasBadge" style="color:var(--gold); font-size:12px; font-weight:800;"></span></div>
             <div id="newsList" style="display:flex; flex-direction:column; gap:8px;"></div>
           </div>
         </div>
       </section>
 
-      <!-- ================= TAB 4: HELPER TOOLS (LOT CALCULATOR + SESSIONS) & CONFIG ================= -->
-      <section class="view" id="tab-tools-config">
+      TAB 5: TOOLS & BACKEND CONFIG
+      <section class="view" id="tab-config">
         <div class="grid-eq">
-          <!-- Helper 1គ: Lot Size Calculator & Market Sessions -->
           <div class="card">
-            <div class="card-head"><h3 style="font-size:15px;">🧮 XAU/USD Lot Size Calculator &amp; Market Sessions</h3></div>
+            <div class="card-head"><h3 style="font-size:15px;">🧮 XAU/USD Lot Size Calculator</h3></div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-              <div>
-                <label style="font-size:11px; color:var(--muted);">Balance ($)</label>
-                <input type="number" id="calcBal" class="input" value="1000" oninput="calcLot()" />
-              </div>
-              <div>
-                <label style="font-size:11px; color:var(--muted);">Risk (%)</label>
-                <input type="number" id="calcRisk" class="input" value="2" step="0.5" oninput="calcLot()" />
-              </div>
-              <div>
-                <label style="font-size:11px; color:var(--muted);">Entry Price</label>
-                <input type="number" id="calcEntry" class="input" value="2748.50" step="0.1" oninput="calcLot()" />
-              </div>
-              <div>
-                <label style="font-size:11px; color:var(--muted);">Stop Loss Price</label>
-                <input type="number" id="calcSl" class="input" value="2744.50" step="0.1" oninput="calcLot()" />
-              </div>
+              <div><label style="font-size:11px; color:var(--muted);">Balance ($)</label><input type="number" id="calcBal" class="input" value="1000" oninput="calcLot()" /></div>
+              <div><label style="font-size:11px; color:var(--muted);">Risk (%)</label><input type="number" id="calcRisk" class="input" value="2" step="0.5" oninput="calcLot()" /></div>
+              <div><label style="font-size:11px; color:var(--muted);">Entry Price</label><input type="number" id="calcEntry" class="input" value="2748.50" oninput="calcLot()" /></div>
+              <div><label style="font-size:11px; color:var(--muted);">Stop Loss</label><input type="number" id="calcSl" class="input" value="2744.50" oninput="calcLot()" /></div>
             </div>
             <div class="price-grid" style="margin-top:10px;">
-              <div class="p-box"><div class="p-lbl">Recommended Lot Size</div><div class="p-val" id="outLot" style="color:var(--cyan);">0.05 Lots</div></div>
+              <div class="p-box"><div class="p-lbl">Recommended Lot</div><div class="p-val" id="outLot" style="color:var(--cyan);">0.05 Lots</div></div>
               <div class="p-box"><div class="p-lbl">Dollar Risk (1R)</div><div class="p-val" id="outRiskUsd" style="color:var(--crimson);">$20.00</div></div>
             </div>
-            <div id="sessionBoxes" style="margin-top:12px; display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:12px;"></div>
           </div>
 
-          <!-- Telegram & Supabase Config -->
-          <div class="card">
-            <div class="card-head">
-              <h3 style="font-size:15px;">⚙️ Telegram Bot &amp; Supabase Cloud Config</h3>
-              <span id="dbStatusBadge" style="color:var(--emerald); font-size:11.5px; font-weight:800;"></span>
-            </div>
-            <div style="display:flex; flex-direction:column; gap:10px;">
+          <!-- <div class="card">
+            <div class="card-head"><h3 style="font-size:15px;">⚙️ Backend Auto-Drop (&ge;70%) &amp; Telegram Config</h3></div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <div>
+                <label style="font-size:11px; color:var(--muted);">Auto-Drop Minimum Confidence (%)</label>
+                <input type="number" id="cfgMinConf" class="input" value="70" />
+              </div>
               <div>
                 <label style="font-size:11px; color:var(--muted);">Telegram Bot Token</label>
                 <input type="text" id="cfgToken" class="input" value="8569884229:AAFvXpiRt1TErXTfOa4ju2WIQuStUeJpvjI" />
@@ -380,11 +506,56 @@
                 <input type="text" id="cfgChat" class="input" value="-1004290149125" />
               </div>
               <div>
-                <label style="font-size:11px; color:var(--muted);">Supabase PostgreSQL URI (`DATABASE_URL`)</label>
-                <input type="password" id="cfgDbUrl" class="input" placeholder="postgresql://postgres:password@db.project.supabase.co:5432/postgres" />
+                <label style="font-size:11px; color:var(--muted);">Supabase PostgreSQL URI (DATABASE_URL)</label>
+                <input type="password" id="cfgDbUrl" class="input" placeholder="postgresql://..." />
               </div>
-              <button class="btn" onclick="saveConfig()">💾 Save &amp; Sync Configuration</button>
+              <button class="btn" style="margin-top:6px;" onclick="saveConfig()">💾 Save Backend Config</button>
             </div>
+          </div> -->
+        </div>
+      </section>
+
+      <!-- TAB 6: ADMIN PAGE FOR APPROVING REGISTERED USERS & CHANGING ADMIN CREDENTIALS -->
+      <section class="view" id="tab-admin">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h3 style="font-size:15px; color:var(--cyan);">🔐 ប្ដូរអ៊ីមែល និងលេខសម្ងាត់ Admin (Change Master Admin Email &amp; Password)</h3>
+              <div style="font-size:11.5px; color:var(--muted);">កំណត់ឈ្មោះ អ៊ីមែល និង Password ផ្ទាល់ខ្លួនរបស់បងសម្រាប់ចូលគ្រប់គ្រងប្រព័ន្ធ</div>
+            </div>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px; align-items:end;">
+            <div>
+              <label style="font-size:11px; color:var(--muted);">Admin Name</label>
+              <input type="text" id="admNewName" class="input" placeholder="Keurn Sothea" />
+            </div>
+            <div>
+              <label style="font-size:11px; color:var(--muted);">New Admin Email</label>
+              <input type="email" id="admNewEmail" class="input" placeholder="your-email@gmail.com" />
+            </div>
+            <div>
+              <label style="font-size:11px; color:var(--muted);">New Admin Password</label>
+              <input type="password" id="admNewPass" class="input" placeholder="វាយលេខសម្ងាត់ថ្មី..." />
+            </div>
+            <button class="btn" style="height:40px;" onclick="updateAdminCredentials()">💾 Save New Admin Login</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h3 style="font-size:15px; color:var(--gold);">👑 Admin User Approval Panel (Telegram Notified)</h3>
+              <div style="font-size:11.5px; color:var(--muted);">Approve, Block, or Delete registered users before they can access the website</div>
+            </div>
+            <button class="btn" onclick="loadAdminUsers()">🔄 Refresh Users</button>
+          </div>
+          <div class="scroll-table">
+            <table>
+              <thead>
+                <tr><th>Name</th><th>Email</th><th>Role</th><th>Email OTP</th><th>Status</th><th>Registered At</th><th>Action</th></tr>
+              </thead>
+              <tbody id="adminUsersTbody"></tbody>
+            </table>
           </div>
         </div>
       </section>
@@ -392,62 +563,237 @@
   </div>
 
   <script>
+    let authToken = localStorage.getItem('takeru_v12_token') || '';
+    let currentUser = null;
+    let activeTf = '15m';
     let countdown = 15;
-    let lang = 'km';
-    let topic = 'main';
-    let lastData = null;
+    let pendingVerifyEmail = '';
+
+    function switchAuthMode(mode) {
+      document.getElementById('authErrorMsg').textContent = '';
+      document.getElementById('formLogin').style.display = mode === 'login' ? 'block' : 'none';
+      document.getElementById('formRegister').style.display = mode === 'register' ? 'block' : 'none';
+      document.getElementById('formOtp').style.display = mode === 'otp' ? 'block' : 'none';
+      document.getElementById('formPending').style.display = mode === 'pending' ? 'block' : 'none';
+      document.getElementById('tabLoginBtn').className = mode === 'login' ? 'btn' : 'btn-outline';
+      document.getElementById('tabRegBtn').className = mode === 'register' ? 'btn' : 'btn-outline';
+    }
+
+    async function submitRegister() {
+      const name = document.getElementById('regName').value.trim();
+      const email = document.getElementById('regEmail').value.trim();
+      const password = document.getElementById('regPass').value;
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password })
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        document.getElementById('authErrorMsg').textContent = data.error;
+        return;
+      }
+      pendingVerifyEmail = email;
+      switchAuthMode('otp');
+      document.getElementById('otpNotice').textContent = `📩 លេខកូដ OTP ត្រូវបានផ្ញើទៅ ${email} (Demo OTP: ${data.demoOtpHint})`;
+      document.getElementById('otpInput').value = data.demoOtpHint || '';
+    }
+
+    async function submitVerifyOtp() {
+      const otp = document.getElementById('otpInput').value.trim();
+      const res = await fetch('/api/auth/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: pendingVerifyEmail, otp })
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        document.getElementById('authErrorMsg').textContent = data.error;
+        return;
+      }
+      switchAuthMode('pending');
+    }
+
+    async function submitLogin() {
+      const email = document.getElementById('loginEmail').value.trim();
+      const password = document.getElementById('loginPass').value;
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        document.getElementById('authErrorMsg').textContent = data.error;
+        return;
+      }
+      authToken = data.token;
+      localStorage.setItem('takeru_v12_token', authToken);
+      applyUserSession(data.user);
+    }
+
+    function applyUserSession(user) {
+      currentUser = user;
+      if (user.status !== 'APPROVED') {
+        document.getElementById('authGate').style.display = 'flex';
+        document.getElementById('appShell').classList.remove('unlocked');
+        switchAuthMode('pending');
+        return;
+      }
+      document.getElementById('authGate').style.display = 'none';
+      document.getElementById('appShell').classList.add('unlocked');
+      document.getElementById('userBadgeText').textContent = `🟢 ${user.name} (${user.role})`;
+      document.getElementById('navAdminBtn').style.display = user.role === 'ADMIN' ? 'flex' : 'none';
+      if (user.role === 'ADMIN') {
+        document.getElementById('admNewName').value = user.name || '';
+        document.getElementById('admNewEmail').value = user.email || '';
+        loadAdminUsers();
+      }
+      pollLiveScan();
+    }
+
+    function logoutUser() {
+      localStorage.removeItem('takeru_v12_token');
+      authToken = '';
+      currentUser = null;
+      document.getElementById('appShell').classList.remove('unlocked');
+      document.getElementById('authGate').style.display = 'flex';
+      switchAuthMode('login');
+    }
+
+    async function checkSavedSession() {
+      if (!authToken) return;
+      try {
+        const res = await fetch('/api/auth/me', {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const data = await res.json();
+        if (data.ok && data.user) applyUserSession(data.user);
+      } catch (e) {}
+    }
+
+    async function loadAdminUsers() {
+      const res = await fetch('/api/admin/users', {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+      const data = await res.json();
+      if (!data.ok) return;
+      document.getElementById('adminUsersTbody').innerHTML = data.users.map(u => `
+        <tr>
+          <td><b>${u.name}</b></td>
+          <td style="font-family:monospace;">${u.email}</td>
+          <td><b>${u.role}</b></td>
+          <td>${u.emailVerified ? '<span style="color:var(--emerald);">Verified</span>' : '<span style="color:var(--gold);">Unverified</span>'}</td>
+          <td>
+            <span style="padding:3px 8px; border-radius:6px; font-weight:800; font-size:11px; background:${u.status === 'APPROVED' ? 'rgba(16,185,129,0.15)' : 'rgba(245,183,0,0.15)'}; color:${u.status === 'APPROVED' ? 'var(--emerald)' : 'var(--gold)'};">
+              ${u.status}
+            </span>
+          </td>
+          <td style="font-family:monospace;">${new Date(u.createdAt).toLocaleString()}</td>
+          <td style="display:flex; gap:6px;">
+            ${u.status !== 'APPROVED' ? `<button class="btn" style="padding:5px 10px; font-size:11px;" onclick="adminAction('${u.id}', 'APPROVE')">✅ Approve</button>` : ''}
+            ${u.role !== 'ADMIN' && u.status === 'APPROVED' ? `<button class="btn-outline" style="padding:5px 10px; font-size:11px; color:var(--gold);" onclick="adminAction('${u.id}', 'BLOCK')">🚫 Block</button>` : ''}
+            ${u.role !== 'ADMIN' ? `<button class="btn-outline" style="padding:5px 10px; font-size:11px; color:var(--crimson);" onclick="adminAction('${u.id}', 'DELETE')">🗑️</button>` : ''}
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    async function adminAction(userId, action) {
+      await fetch('/api/admin/approve-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+        body: JSON.stringify({ userId, action })
+      });
+      loadAdminUsers();
+    }
 
     function showTab(id, btn) {
       document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
       document.getElementById('tab-' + id).classList.add('active');
       document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
       if (btn) btn.classList.add('active');
+      if (id === 'admin') loadAdminUsers();
+    }
+
+    function selectTimeframe(tf) {
+      activeTf = tf === '5m' ? '5m' : '15m';
+      document.getElementById('btnTf5m').classList.toggle('active', activeTf === '5m');
+      document.getElementById('btnTf15m').classList.toggle('active', activeTf === '15m');
+      document.getElementById('scannerHeaderTitle').textContent = activeTf === '5m'
+        ? '⚡ XAU/USD 5m Scalping Scanner (Aligned with 1H Trend)'
+        : '🏛️ XAU/USD 15m Intraday Scanner (Aligned with 4H Trend)';
+      document.getElementById('btTitle').textContent = activeTf === '5m'
+        ? '🧬 Real Chart Backtester — 5m Execution (1H Trend)'
+        : '🧬 Real Chart Backtester — 15m Execution (4H Trend)';
+      pollLiveScan();
     }
 
     setInterval(() => {
+      if (!currentUser || currentUser.status !== 'APPROVED') return;
       countdown--;
       if (countdown <= 0) {
         countdown = 15;
-        pollLive15mScan();
+        pollLiveScan();
       }
       document.getElementById('countdownText').textContent = countdown;
     }, 1000);
 
-    async function pollLive15mScan() {
+    async function pollLiveScan() {
+      if (!authToken) return;
       try {
-        const res = await fetch('/api/live-scan');
+        const res = await fetch(`/api/live-scan?tf=${activeTf}`, {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
         const data = await res.json();
         if (!data.ok) return;
-        lastData = data;
 
-        // Real Live Ticker
-        document.getElementById('tkXau').textContent = `${data.spot.XAUUSD.price} (${data.spot.XAUUSD.change >= 0 ? '+' : ''}${data.spot.XAUUSD.change}%)`;
-        document.getElementById('tkXag').textContent = `${data.spot.XAGUSD.price} (${data.spot.XAGUSD.change >= 0 ? '+' : ''}${data.spot.XAGUSD.change}%)`;
-        document.getElementById('tkDxy').textContent = `${data.spot.DXY.price} (${data.spot.DXY.change}%)`;
-        document.getElementById('tkJpy').textContent = `${data.spot.USDJPY.price} (${data.spot.USDJPY.change}%)`;
-        document.getElementById('tkEur').textContent = `${data.spot.EURUSD.price} (${data.spot.EURUSD.change}%)`;
+        document.querySelectorAll('.tk-xau').forEach(el => {
+          el.textContent = `${data.spot.XAUUSD.price} (${data.spot.XAUUSD.change >= 0 ? '+' : ''}${data.spot.XAUUSD.change}%)`;
+        });
+        document.querySelectorAll('.tk-1h').forEach(el => {
+          el.textContent = `🟢 ${data.scan5mSummary?.htfTrend || 'BULLISH'}`;
+        });
+        document.querySelectorAll('.tk-4h').forEach(el => {
+          el.textContent = `🟢 ${data.scan15mSummary?.htfTrend || 'BULLISH'}`;
+        });
+        document.querySelectorAll('.tk-xag').forEach(el => {
+          el.textContent = `${data.spot.XAGUSD.price} (${data.spot.XAGUSD.change >= 0 ? '+' : ''}${data.spot.XAGUSD.change}%)`;
+        });
+        document.querySelectorAll('.tk-dxy').forEach(el => {
+          el.textContent = `${data.spot.DXY.price} (${data.spot.DXY.change}%)`;
+        });
+        document.querySelectorAll('.tk-jpy').forEach(el => {
+          el.textContent = `${data.spot.USDJPY.price} (${data.spot.USDJPY.change}%)`;
+        });
+        document.querySelectorAll('.tk-eur').forEach(el => {
+          el.textContent = `${data.spot.EURUSD.price} (${data.spot.EURUSD.change}%)`;
+        });
 
         const s = data.scan;
         const lv = s.levels;
         const st = data.tradeLock.stats;
+        const ind = s.indicators || { adx: 25, rsi: 50 };
+
+        document.getElementById('lblHtfKpi').textContent = `HTF Trend (${s.htfTrendTf})`;
+        document.getElementById('valHtfKpi').textContent = `${s.htfContext.trendDir} (ADX ${s.htfContext.adx})`;
+        document.getElementById('valHtfKpi').style.color = s.htfContext.trendDir === 'BULLISH' ? 'var(--emerald)' : 'var(--crimson)';
 
         document.getElementById('zoneFilterBadge').textContent = s.entryZoneReady
           ? '✅ IN/NEAR ENTRY ZONE'
-          : `⏳ WAIT (${s.distanceToZone} pts away)`;
-        document.getElementById('zoneFilterBadge').style.color = s.entryZoneReady ? 'var(--emerald)' : 'var(--gold)';
-
-        document.getElementById('winRateBadge').textContent = `${st.winRate}% (${st.totalTrades} Trades)`;
+          : `⏳ WAIT (${s.distanceToZone} pts)`;
+        document.getElementById('adxRsiBadge').textContent = `ADX ${ind.adx} | RSI ${ind.rsi}`;
+        document.getElementById('winRateBadge').textContent = `${st.winRate}% (${st.totalTrades})`;
         document.getElementById('lockBadge').textContent = data.tradeLock.status;
-        document.getElementById('activeModelLabel').textContent = `🧬 Active 15m Backtested Model: ${s.strategyUsedText}`;
-        document.getElementById('dbStatusBadge').textContent = data.dbHealth?.dbType || 'Connected';
+        document.getElementById('activeModelLabel').textContent = `🧬 Active ${activeTf.toUpperCase()} Model: ${s.strategyUsedText}`;
 
         const sigEl = document.getElementById('sigOrderType');
         if (s.orderType === 'WAITING FOR ENTRY ZONE') {
-          sigEl.textContent = `⏳ WAITING FOR 15M ENTRY ZONE (${s.direction} BIAS)`;
+          sigEl.textContent = `⏳ WAITING FOR ${activeTf.toUpperCase()} ZONE (${s.direction})`;
           sigEl.style.color = 'var(--gold)';
         } else {
           const isBuy = s.direction === 'BUY';
-          sigEl.textContent = `${isBuy ? '🟢' : '🔴'} ${s.orderType}`;
+          sigEl.textContent = `${isBuy ? '🟢🚀' : '🔴☄️'} ${s.orderType}`;
           sigEl.style.color = isBuy ? 'var(--emerald)' : 'var(--crimson)';
         }
 
@@ -456,44 +802,48 @@
         document.getElementById('valSl').textContent = lv.sl.toFixed(2);
         document.getElementById('valTp1').textContent = lv.tp1.toFixed(2);
         document.getElementById('valFullTp').textContent = lv.fullTp.toFixed(2);
+        document.getElementById('valClearDol').textContent = s.clearDol?.targetPrice ? s.clearDol.targetPrice.toFixed(2) : lv.fullTp.toFixed(2);
 
         const previewType = s.orderType === 'WAITING FOR ENTRY ZONE' ? `${s.direction} LIMIT` : s.orderType;
         document.getElementById('tgPreviewBox').textContent = [
-          `${s.direction === 'BUY' ? '🟢' : '🔴'} ${previewType} — XAUUSD (15M)`,
-          `🤖 AI Confidence: ${s.winProbability.toFixed(1)}%`,
+          activeTf === '5m' ? '⚡🔥 [5M SCALPING • 1H TREND]' : '🏛️💎 [15M INTRADAY • 4H TREND]',
+          `╔══════════════════════════╗`,
+          `  ${s.direction === 'BUY' ? '🟢🚀' : '🔴☄️'} ${previewType} — XAU/USD (${activeTf.toUpperCase()})`,
+          `╚══════════════════════════╝`,
+          `🧭 HTF Trend (${s.htfTrendTf}): ${s.htfContext.trendDir} (ADX ${ind.adx})`,
+          `🤖 AI Confidence: ▰▰▰▰▰▰▰▰▱▱ ${s.winProbability.toFixed(1)}%`,
           `📊 Win Rate: ${st.winRate}% | Total Trade: ${st.totalTrades}`,
           `📦 Entry Zone: ${lv.entryLow.toFixed(2)} — ${lv.entryHigh.toFixed(2)}`,
-          `🛑 SL: ${lv.sl.toFixed(2)}`,
-          `💰 TP 1: ${lv.tp1.toFixed(2)}`,
-          `🏆 Full TP: ${lv.fullTp.toFixed(2)}`
+          `🛑 Stop Loss: ${lv.sl.toFixed(2)}`,
+          `💰 TP 1 (1:1): ${lv.tp1.toFixed(2)}`,
+          `🏆 Full TP (1:2): ${lv.fullTp.toFixed(2)}`
         ].join('\n');
 
-        draw15mChart(data.candles15m, lv, s.livePrice);
-        renderFollowUp();
+        drawChart(data.candles, lv, s.livePrice, s.clearDol?.targetPrice, activeTf, s.htfTrendTf);
+        renderStrongZones(s.strongZones || []);
         renderStrategiesTable(data.allStrategies || []);
         renderCorrAndNews(data.correlation, data.news);
-        renderHistoryTable(data.signalHistory || [], st);
+        renderHistoryTable(data.signalHistory || []);
       } catch (e) {}
     }
 
-    function draw15mChart(candles, lv, livePrice) {
-      const c = document.getElementById('chart15mCanvas');
+    function drawChart(candles, lv, livePrice, clearDolPrice, tf, htf) {
+      const c = document.getElementById('chartCanvas');
       const ctx = c.getContext('2d');
       const W = c.width, H = c.height;
-      ctx.fillStyle = '#04070e';
+      ctx.fillStyle = '#03060c';
       ctx.fillRect(0, 0, W, H);
 
-      const padL = 16, padR = 88, padT = 36, padB = 24;
+      const padL = 16, padR = 94, padT = 36, padB = 24;
       const pW = W - padL - padR, pH = H - padT - padB;
-      const maxP = Math.max(...candles.map(x => x.high), lv.fullTp, lv.sl) + 1.0;
-      const minP = Math.min(...candles.map(x => x.low), lv.fullTp, lv.sl) - 1.0;
+      const maxP = Math.max(...candles.map(x => x.high), lv.fullTp, lv.sl, clearDolPrice || lv.fullTp) + 0.8;
+      const minP = Math.min(...candles.map(x => x.low), lv.fullTp, lv.sl, clearDolPrice || lv.sl) - 0.8;
       const rng = Math.max(0.1, maxP - minP);
       const yOf = p => padT + ((maxP - p) / rng) * pH;
 
-      // Shade 15m Entry Zone Box
       const yTop = yOf(lv.entryHigh);
       const yBot = yOf(lv.entryLow);
-      ctx.fillStyle = 'rgba(0, 210, 255, 0.14)';
+      ctx.fillStyle = 'rgba(0, 210, 255, 0.15)';
       ctx.fillRect(padL, yTop, pW, Math.max(4, yBot - yTop));
 
       const step = pW / candles.length;
@@ -520,75 +870,49 @@
         ctx.fillText(`${lbl}: ${p.toFixed(2)}`, padL + 6, y - 4);
       };
       line(lv.entryMid, '#00d2ff', 'ENTRY ZONE');
-      line(lv.sl, '#ff2a5f', 'SL');
+      line(lv.sl, '#ff2a5f', 'DYNAMIC SL');
       line(lv.tp1, '#10b981', 'TP 1');
-      line(lv.fullTp, '#f5b700', 'FULL TP (1:2)');
+      line(lv.fullTp, '#f5b700', 'FULL TP');
+      if (clearDolPrice) line(clearDolPrice, '#a855f7', 'CLEAR DOL');
 
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 12.5px Inter, sans-serif';
-      ctx.fillText(`XAU/USD • 15M Real Chart | Live: ${livePrice.toFixed(2)}`, padL, 22);
+      ctx.fillText(`XAU/USD • ${tf.toUpperCase()} Chart (HTF ${htf} Trend) | Live: ${livePrice.toFixed(2)}`, padL, 22);
     }
 
-    function switchLang(l) {
-      lang = l;
-      document.getElementById('btnKm').classList.toggle('active', l === 'km');
-      document.getElementById('btnEn').classList.toggle('active', l === 'en');
-      renderFollowUp();
-    }
-
-    function setFollowTopic(t) {
-      topic = t;
-      renderFollowUp();
-    }
-
-    function renderFollowUp() {
-      if (!lastData) return;
-      const s = lastData.scan;
-      const lv = s.levels;
-      const isBuy = s.direction === 'BUY';
-      const title = document.getElementById('followTitle');
-      const body = document.getElementById('followBody');
-
-      if (topic === 'main') {
-        if (lang === 'km') {
-          title.textContent = isBuy ? 'Why Buy Khmer Response' : 'Why Sell Khmer Response';
-          body.textContent = s.entryZoneReady
-            ? `ការសម្រេចចិត្ត ${s.orderType} លើ Timeframe 15m គឺផ្អែកលើក្បួនដែលឈ្នះការ Backtest លើក្រាហ្វិកពិត (${s.strategyUsedText}) រួមជាមួយការគាំទ្រពីគូពាក់ព័ន្ធ (${lastData.correlation.overallBias}) និងព័ត៌មានផ្ទាល់ (${lastData.news.sentimentBias})។ តម្លៃឥឡូវ ${s.livePrice.toFixed(2)} ស្ថិតនៅជិត/ក្នុងតំបន់ Entry Zone ${lv.entryLow.toFixed(2)}–${lv.entryHigh.toFixed(2)} រួចហើយ។ Stop Loss កំណត់នៅ ${lv.sl.toFixed(2)} ហើយគោលដៅគឺ TP 1 (${lv.tp1.toFixed(2)}) និង Full TP 1:2 RR (${lv.fullTp.toFixed(2)})។`
-            : `បច្ចុប្បន្នតម្លៃមាស 15m (${s.livePrice.toFixed(2)}) ស្ថិតនៅឆ្ងាយពីតំបន់ Entry Zone ល្អ (${lv.entryLow.toFixed(2)}–${lv.entryHigh.toFixed(2)}) ចំនួន ${s.distanceToZone} ពិន្ទុ។ ប្រព័ន្ធមិនទាន់ទម្លាក់ Signal ចូល Telegram ទេ គឺរង់ចាំឱ្យតម្លៃចូលដល់តំបន់ Entry Zone ល្អ និងមានទំនុកចិត្ត >= 75% សិន។`;
-        } else {
-          title.textContent = isBuy ? 'Why Buy English Response' : 'Why Sell English Response';
-          body.textContent = s.entryZoneReady
-            ? `The 15m ${s.orderType} setup is confirmed by our top real-chart backtested models (${s.strategyUsedText}), aligned with real-time correlation (${lastData.correlation.overallBias}) and live news (${lastData.news.sentimentBias}). Current price (${s.livePrice.toFixed(2)}) is testing the ${lv.entryLow.toFixed(2)}–${lv.entryHigh.toFixed(2)} Entry Zone. Stop Loss is ${lv.sl.toFixed(2)} with targets at TP 1 (${lv.tp1.toFixed(2)}) and Full TP 1:2 RR (${lv.fullTp.toFixed(2)}).`
-            : `Price (${s.livePrice.toFixed(2)}) is currently ${s.distanceToZone} pts away from the optimal 15m Entry Zone (${lv.entryLow.toFixed(2)}–${lv.entryHigh.toFixed(2)}). The AI is patiently waiting for price to reach the Entry Zone with >= 75% confidence before dropping a Telegram signal.`;
-        }
-      } else if (topic === 'invalidate') {
-        title.textContent = 'What invalidates this setup?';
-        body.textContent = lang === 'km'
-          ? `Setup 15m នេះនឹងត្រូវលុបចោលប្រសិនបើតម្លៃបំបែកផុតកម្រិត Stop Loss ${lv.sl.toFixed(2)}។`
-          : `This 15m setup is invalidated if price breaks beyond the Stop Loss level at ${lv.sl.toFixed(2)}.`;
-      } else if (topic === 'opposite') {
-        title.textContent = 'What about the opposite direction?';
-        body.textContent = lang === 'km'
-          ? `យើងនឹងប្ដូរទិសដៅលុះត្រាតែតម្លៃបំបែកផុត ${lv.sl.toFixed(2)} ហើយបង្កើតតំបន់ Entry Zone 15m ថ្មីក្នុងទិសដៅផ្ទុយ។`
-          : `We only flip direction if price invalidates ${lv.sl.toFixed(2)} and forms a confirmed 15m opposing Entry Zone.`;
-      } else {
-        title.textContent = 'Best entry trigger to watch?';
-        body.textContent = lang === 'km'
-          ? `រង់ចាំឱ្យតម្លៃចូលដល់តំបន់ Entry Zone ${lv.entryLow.toFixed(2)}–${lv.entryHigh.toFixed(2)} ហើយមានប្រតិកម្មទៀន 15m ច្បាស់លាស់។`
-          : `Wait for price to enter the ${lv.entryLow.toFixed(2)}–${lv.entryHigh.toFixed(2)} Entry Zone and print a 15m rejection candle.`;
+    function renderStrongZones(zones) {
+      const box = document.getElementById('strongZonesGrid');
+      if (!zones.length) {
+        box.innerHTML = `<div style="color:var(--muted);">Scanning real ${activeTf} candles for unmitigated zones...</div>`;
+        return;
       }
+      box.innerHTML = zones.map(z => `
+        <div style="background:var(--inner); border:1px solid ${z.direction === 'BUY' ? 'var(--emerald)' : 'var(--crimson)'}; border-radius:12px; padding:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <b style="color:${z.direction === 'BUY' ? 'var(--emerald)' : 'var(--crimson)'};">${z.direction === 'BUY' ? '🟢 DEMAND ZONE (BUY)' : '🔴 SUPPLY ZONE (SELL)'}</b>
+            <span style="font-family:monospace; font-size:11.5px; color:var(--cyan);">Strength: ${z.strengthScore}%</span>
+          </div>
+          <div style="font-size:12px; font-weight:700; margin-bottom:8px;">${z.pattern}</div>
+          <div style="font-family:monospace; font-size:12px; line-height:1.7;">
+            <div>📦 Entry Zone: <b style="color:var(--cyan);">${z.zoneLow.toFixed(2)} — ${z.zoneHigh.toFixed(2)}</b> (${z.distancePts} pts away)</div>
+            <div>🛑 Dynamic SL: <b style="color:var(--crimson);">${z.slPrice.toFixed(2)}</b></div>
+            <div>💰 TP 1: <b style="color:var(--emerald);">${z.tp1.toFixed(2)}</b> | 🏆 Full TP: <b style="color:var(--gold);">${z.fullTp.toFixed(2)}</b></div>
+          </div>
+        </div>
+      `).join('');
     }
 
     function renderStrategiesTable(list) {
       document.getElementById('conceptsTbody').innerHTML = list.map(m => `
         <tr style="${m.autoSelected ? 'background:rgba(0,210,255,0.09);' : ''}">
           <td><b>#${m.rank}</b></td>
+          <td><b>${(m.timeframe || activeTf).toUpperCase()} (${m.htfTrendTf || 'HTF'})</b></td>
           <td>${m.autoSelected ? '<span style="color:var(--gold); font-weight:800;">👑 AUTO-SELECTED</span>' : '<span style="color:var(--muted);">Standby</span>'}</td>
           <td><b>${m.strategyId}</b> — ${m.strategyName}</td>
           <td style="color:var(--emerald); font-family:monospace; font-weight:800;">${m.winRate}%</td>
           <td style="font-family:monospace;">${m.totalTrades} (${m.wins}W/${m.losses}L)</td>
           <td style="font-family:monospace;">${m.profitFactor}x</td>
-          <td style="color:var(--gold); font-family:monospace; font-weight:800;">${m.netRProfit >= 0 ? '+' : ''}${m.netRProfit}R</td>
+          <td style="color:${m.netRProfit >= 0 ? 'var(--gold)' : 'var(--crimson)'}; font-family:monospace; font-weight:800;">${m.netRProfit >= 0 ? '+' : ''}${m.netRProfit}R</td>
         </tr>
       `).join('');
     }
@@ -597,7 +921,7 @@
       if (corr) {
         document.getElementById('corrAlignBadge').textContent = `${corr.overallBias} (${corr.alignmentScore}%)`;
         document.getElementById('corrList').innerHTML = (corr.pairs || []).map(p => `
-          <div style="background:var(--inner); border:1px solid var(--border); padding:10px 12px; border-radius:10px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;">
+          <div style="background:var(--inner); border:1px solid var(--border); padding:10px 12px; border-radius:10px; display:flex; justify-content:space-between;">
             <b>${p.symbol}</b>
             <span style="font-family:monospace;"><b>${p.price}</b> (${p.change >= 0 ? '+' : ''}${p.change}%) • ${p.status}</span>
           </div>
@@ -619,13 +943,14 @@
 
     function renderHistoryTable(list) {
       const tbody = document.getElementById('historyTbody');
-      if (!list || list.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:var(--muted);">Waiting for first verified 15m Entry Zone (>= 75% confidence)...</td></tr>`;
+      if (!list.length) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--muted);">Waiting for verified 5m or 15m Entry Zone (>= 70% confidence)...</td></tr>`;
         return;
       }
       tbody.innerHTML = list.map(item => `
         <tr>
           <td style="font-family:monospace;">${new Date(item.createdAt).toLocaleTimeString()}</td>
+          <td><b>${(item.timeframe || '15m').toUpperCase()}</b></td>
           <td><b style="color:${item.direction === 'BUY' ? 'var(--emerald)' : 'var(--crimson)'};">${item.orderType}</b></td>
           <td style="font-family:monospace;">${item.winProbability}%</td>
           <td style="font-family:monospace; color:var(--cyan);">${item.levels.entryLow.toFixed(2)} — ${item.levels.entryHigh.toFixed(2)}</td>
@@ -648,64 +973,77 @@
       document.getElementById('outRiskUsd').textContent = `$${riskUsd.toFixed(2)}`;
     }
 
-    function updateClocks() {
-      const now = new Date();
-      const pp = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(now);
-      document.getElementById('ppClockTop').textContent = `Phnom Penh ${pp} (UTC+7)`;
-      const h = now.getUTCHours();
-      const sList = [
-        { name: '🇦🇺 Sydney', open: h >= 21 || h < 6 },
-        { name: '🇯🇵 Tokyo', open: h >= 0 && h < 9 },
-        { name: '🇬🇧 London', open: h >= 7 && h < 16 },
-        { name: '🇺🇸 New York', open: h >= 12 && h < 21 }
-      ];
-      const box = document.getElementById('sessionBoxes');
-      if (box) {
-        box.innerHTML = sList.map(s => `
-          <div style="background:var(--inner); border:1px solid var(--border); padding:8px 10px; border-radius:8px; display:flex; justify-content:space-between;">
-            <b>${s.name}</b>
-            <span style="color:${s.open ? 'var(--emerald)' : 'var(--crimson)'}; font-weight:800;">${s.open ? 'OPEN' : 'CLOSED'}</span>
-          </div>
-        `).join('');
-      }
-    }
-
-    async function forceTrainNow() {
-      const btn = document.getElementById('btnTrainNow');
-      btn.textContent = '⏳ Backtesting on Real 15m Chart...';
-      await fetch('/api/train-now', { method: 'POST' });
-      btn.textContent = '🚀 Run Real 15m Backtest & Train AI Now';
-      pollLive15mScan();
+    async function forceTrainTf(tf) {
+      await fetch('/api/train-now', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tf })
+      });
+      selectTimeframe(tf);
     }
 
     async function unlockTradeNow() {
-      await fetch('/api/unlock-trade', { method: 'POST' });
-      pollLive15mScan();
+      await fetch('/api/unlock-trade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tf: activeTf })
+      });
+      pollLiveScan();
     }
 
     async function testTelegramSignal() {
-      await fetch('/api/telegram-test', { method: 'POST' });
-      alert('📲 Clean 15m Signal Card Sent to Telegram!');
+      await fetch('/api/telegram-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tf: activeTf })
+      });
+      alert(`📲 Styled ${activeTf.toUpperCase()} Signal Card Sent to Telegram!`);
     }
 
     async function saveConfig() {
+      const minSignalConfidence = Number(document.getElementById('cfgMinConf').value || 70);
       const botToken = document.getElementById('cfgToken').value.trim();
       const chatId = document.getElementById('cfgChat').value.trim();
       const databaseUrl = document.getElementById('cfgDbUrl').value.trim();
       await fetch('/api/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ botToken, chatId, databaseUrl })
+        body: JSON.stringify({ minSignalConfidence, botToken, chatId, databaseUrl })
       });
-      alert('✅ Saved & Synced!');
-      pollLive15mScan();
+      alert('✅ Backend Configuration Saved!');
+    }
+
+    async function updateAdminCredentials() {
+      const name = document.getElementById('admNewName').value.trim();
+      const email = document.getElementById('admNewEmail').value.trim();
+      const password = document.getElementById('admNewPass').value;
+      if (!email) {
+        alert('សូមបញ្ចូលអ៊ីមែល Admin ថ្មី!');
+        return;
+      }
+      const res = await fetch('/api/admin/update-credentials', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ name, email, password })
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        alert(data.error || 'Update failed');
+        return;
+      }
+      currentUser = data.user;
+      document.getElementById('userBadgeText').textContent = `🟢 ${data.user.name} (${data.user.role})`;
+      document.getElementById('admNewPass').value = '';
+      alert(`✅ បានប្ដូរគណនី Admin ទៅជា ${data.user.email} រួចរាល់!`);
+      loadAdminUsers();
     }
 
     window.addEventListener('load', () => {
-      pollLive15mScan();
+      checkSavedSession();
       calcLot();
-      updateClocks();
-      setInterval(updateClocks, 1000);
     });
   </script>
 </body>

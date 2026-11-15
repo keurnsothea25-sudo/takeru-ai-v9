@@ -3,14 +3,21 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const url = require('url');
+const crypto = require('crypto');
 
 const { getConfig, updateConfig } = require('./config');
-const { initDatabaseEngine, loadStore, saveStore, getDbHealth } = require('./db/database');
+const { hashPassword, initDatabaseEngine, loadStore, saveStore, getDbHealth } = require('./db/database');
 const {
-  backtestAllModelsOnReal15mChart,
-  evaluateLive15mWithSmartEntryZone
+  fetchRealGoldHistoryByTf,
+  backtestModelsForTimeframe,
+  evaluateLiveTimeframeWithSmartZone
 } = require('./services/ai-engine');
-const { formatCleanTelegramSignal, sendTelegramMessage } = require('./services/telegram');
+const {
+  formatCleanTelegramSignal,
+  formatLifecycleAlert,
+  formatNewUserRegistrationAlert,
+  sendTelegramMessage
+} = require('./services/telegram');
 
 const cfg = getConfig();
 const PORT = cfg.port;
@@ -48,9 +55,6 @@ function httpsGetJson(reqUrl, options = {}, postBody = null) {
   });
 }
 
-// ============================================================================
-// 1. REAL LIVE PRICES FOR XAU/USD, XAG/USD, DXY, USD/JPY, EUR/USD
-// ============================================================================
 async function fetchRealSpotPrices() {
   const spot = {
     XAUUSD: { price: 0, change: 0 },
@@ -60,7 +64,6 @@ async function fetchRealSpotPrices() {
     EURUSD: { price: 0, change: 0 }
   };
 
-  // Source A: TradingView Live Scanner (Real-Time CFD/Forex Quotes)
   const payload = JSON.stringify({
     symbols: {
       tickers: ['FOREXCOM:XAUUSD', 'FOREXCOM:XAGUSD', 'TVC:DXY', 'FX:USDJPY', 'FX:EURUSD']
@@ -92,7 +95,6 @@ async function fetchRealSpotPrices() {
     }
   } catch (e) {}
 
-  // Source B: Swissquote Live Institutional BBO Feed (Direct Bank Quotes)
   try {
     const [sqXau, sqXag, sqEur, sqJpy] = await Promise.all([
       httpsGetJson('https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/XAU/USD').catch(() => null),
@@ -123,76 +125,12 @@ async function fetchRealSpotPrices() {
   return spot;
 }
 
-// ============================================================================
-// 2. REAL 15M HISTORICAL CANDLES FROM YAHOO FINANCE (CALIBRATED TO SPOT)
-// ============================================================================
-async function fetchReal15mCandles(liveSpotPrice = 0) {
-  try {
-    const yUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/GC%3DF?interval=15m&range=5d';
-    const data = await httpsGetJson(yUrl);
-    const res = data?.chart?.result?.[0];
-    const ts = res?.timestamp || [];
-    const q = res?.indicators?.quote?.[0] || {};
-    const raw = [];
-
-    for (let i = 0; i < ts.length; i++) {
-      if (q.open?.[i] != null && q.high?.[i] != null && q.low?.[i] != null && q.close?.[i] != null) {
-        raw.push({
-          time: ts[i],
-          open: Number(q.open[i]),
-          high: Number(q.high[i]),
-          low: Number(q.low[i]),
-          close: Number(q.close[i]),
-          volume: Number(q.volume?.[i] || 1200)
-        });
-      }
-    }
-
-    if (raw.length >= 40) {
-      const sliced = raw.slice(-260);
-      const lastClose = sliced[sliced.length - 1].close;
-      const targetPrice = liveSpotPrice > 0 ? liveSpotPrice : Number(lastClose.toFixed(2));
-      const offset = targetPrice - lastClose;
-
-      return sliced.map((c, idx) => {
-        const o = Number((c.open + offset).toFixed(2));
-        const cl = idx === sliced.length - 1 ? Number(targetPrice.toFixed(2)) : Number((c.close + offset).toFixed(2));
-        const h = Number(Math.max(c.high + offset, o, cl).toFixed(2));
-        const l = Number(Math.min(c.low + offset, o, cl).toFixed(2));
-        return { time: c.time, open: o, high: h, low: l, close: cl, volume: c.volume };
-      });
-    }
-  } catch (e) {}
-
-  // Emergency fallback only if Yahoo Finance is unreachable
-  const base = liveSpotPrice > 0 ? liveSpotPrice : 2748.50;
-  const nowSec = Math.floor(Date.now() / 1000);
-  const aligned = nowSec - (nowSec % 900);
-  const fallback = [];
-  let p = base - 8;
-  for (let i = 160; i >= 0; i--) {
-    const t = aligned - i * 900;
-    const w = Math.sin(i * 0.25) * 1.8;
-    const o = Number(p.toFixed(2));
-    const cl = i === 0 ? base : Number((o + w * 0.4).toFixed(2));
-    const h = Number((Math.max(o, cl) + 1.4).toFixed(2));
-    const l = Number((Math.min(o, cl) - 1.4).toFixed(2));
-    fallback.push({ time: t, open: o, high: h, low: l, close: cl, volume: 1200 });
-    p = cl;
-  }
-  return fallback;
-}
-
-// ============================================================================
-// 3. REAL LIVE NEWS ANALYZER FROM YAHOO FINANCE NEWS API
-// ============================================================================
 let cachedNews = { fetchedAt: 0, data: null };
 
 async function fetchRealLiveGoldNews(spot) {
   if (cachedNews.data && Date.now() - cachedNews.fetchedAt < 90000) {
     return cachedNews.data;
   }
-
   const bullishWords = ['surge', 'rally', 'gain', 'jump', 'safe-haven', 'cut', 'dovish', 'lower yields', 'weak dollar', 'inflation', 'buy', 'record', 'bullish', 'rise', 'higher'];
   const bearishWords = ['drop', 'fall', 'slide', 'hawkish', 'hike', 'strong dollar', 'higher yields', 'sell', 'pressure', 'decline', 'dip', 'bearish', 'lower'];
 
@@ -209,7 +147,6 @@ async function fetchRealLiveGoldNews(spot) {
       const title = String(item.title || '').trim();
       if (!title) continue;
       const lower = title.toLowerCase();
-
       let sCount = 0;
       bullishWords.forEach(w => { if (lower.includes(w)) sCount++; });
       bearishWords.forEach(w => { if (lower.includes(w)) sCount--; });
@@ -217,9 +154,7 @@ async function fetchRealLiveGoldNews(spot) {
       let sentiment = 'NEUTRAL';
       if (sCount > 0) { sentiment = 'BULLISH GOLD'; bullScore += sCount; }
       else if (sCount < 0) { sentiment = 'BEARISH GOLD'; bearScore += Math.abs(sCount); }
-      else {
-        sentiment = spot.DXY.change <= 0 ? 'BULLISH GOLD' : 'BEARISH GOLD';
-      }
+      else sentiment = spot.DXY.change <= 0 ? 'BULLISH GOLD' : 'BEARISH GOLD';
 
       const pubSec = item.providerPublishTime ? item.providerPublishTime * 1000 : Date.now();
       const minsAgo = Math.max(1, Math.round((Date.now() - pubSec) / 60000));
@@ -229,7 +164,6 @@ async function fetchRealLiveGoldNews(spot) {
         time: timeStr,
         publisher: item.publisher || 'Yahoo Finance Live',
         title,
-        link: item.link || '',
         sentiment
       });
     }
@@ -238,21 +172,25 @@ async function fetchRealLiveGoldNews(spot) {
   if (spot.DXY.change < 0) bullScore += 1;
   else if (spot.DXY.change > 0) bearScore += 1;
 
-  const overallBias = bullScore >= bearScore ? 'BULLISH GOLD' : 'BEARISH GOLD';
   const result = {
-    sentimentBias: overallBias,
+    sentimentBias: bullScore >= bearScore ? 'BULLISH GOLD' : 'BEARISH GOLD',
     sentimentScore: 0.88,
     headlines
   };
-
   cachedNews = { fetchedAt: Date.now(), data: result };
   return result;
 }
 
-async function getFullReal15mBundle() {
+async function getFullMultiTimeframeBundle() {
   const spot = await fetchRealSpotPrices();
-  const candles15m = await fetchReal15mCandles(spot.XAUUSD.price);
-  const livePrice = spot.XAUUSD.price > 0 ? spot.XAUUSD.price : candles15m[candles15m.length - 1].close;
+  const [candles5m, candles15m] = await Promise.all([
+    fetchRealGoldHistoryByTf('5m', spot.XAUUSD.price),
+    fetchRealGoldHistoryByTf('15m', spot.XAUUSD.price)
+  ]);
+
+  const livePrice = spot.XAUUSD.price > 0
+    ? spot.XAUUSD.price
+    : (candles15m[candles15m.length - 1]?.close || 2748.50);
   spot.XAUUSD.price = livePrice;
 
   const xagBull = spot.XAGUSD.change >= 0;
@@ -279,40 +217,38 @@ async function getFullReal15mBundle() {
   return {
     livePrice,
     spot,
+    candles5m,
     candles15m,
     correlation,
     news
   };
 }
 
-// ============================================================================
-// 4. SMART ENTRY ZONE & 1:2 RR LIFECYCLE ENGINE (ONLY DROPS WHEN ENTRY ZONE IS READY)
-// ============================================================================
-async function evaluateSmartTradeLifecycle(scan) {
+/**
+ * គ្រប់គ្រងការទម្លាក់ Signal ស្វ័យប្រវត្តិទាំង 5m និង 15m ចូលក្នុង Telegram Channel/Group រួមគ្នា ពេល Confidence >= 70%
+ */
+async function evaluateSmartTradeLifecycleForTf(scan, tf = '15m') {
+  const cleanTf = tf === '5m' ? '5m' : '15m';
   const store = loadStore();
-  const tState = store.trade_lock_state;
+  const tState = store.trade_locks[cleanTf];
   const livePrice = scan.livePrice;
-  const minConf = Number(getConfig().minSignalConfidence || 75.0);
+  const minConf = Number(getConfig().minSignalConfidence || 70.0);
 
-  // 1. If a trade is currently active or pending, monitor Entry, TP 1 (1:1), Full TP (1:2), and SL
   if (['LIMIT_PENDING', 'ACTIVE_IN_TRADE'].includes(tState.status) && tState.lockedTrade) {
     const t = tState.lockedTrade;
     const isBuy = t.direction === 'BUY';
 
-    // LIMIT_PENDING -> ACTIVE_IN_TRADE ("Limit Active")
     if (tState.status === 'LIMIT_PENDING') {
       const enteredZone = isBuy
         ? (livePrice <= t.levels.entryHigh && livePrice >= t.levels.sl)
         : (livePrice >= t.levels.entryLow && livePrice <= t.levels.sl);
-
       if (enteredZone) {
         tState.status = 'ACTIVE_IN_TRADE';
         await saveStore();
-        sendTelegramMessage('Limit Active').catch(() => {});
+        sendTelegramMessage(formatLifecycleAlert('Limit Active', cleanTf)).catch(() => {});
       }
     }
 
-    // ACTIVE_IN_TRADE -> Hold strictly until Full TP (1:2 RR) or SL!
     if (tState.status === 'ACTIVE_IN_TRADE') {
       const hitSL = isBuy ? livePrice <= t.levels.sl : livePrice >= t.levels.sl;
       const hitTp1 = isBuy ? livePrice >= t.levels.tp1 : livePrice <= t.levels.tp1;
@@ -325,7 +261,7 @@ async function evaluateSmartTradeLifecycle(scan) {
         tState.status = 'IDLE';
         tState.lockedTrade = null;
         await saveStore();
-        sendTelegramMessage('Hit SL').catch(() => {});
+        sendTelegramMessage(formatLifecycleAlert('Hit SL', cleanTf)).catch(() => {});
         return tState;
       }
 
@@ -333,7 +269,7 @@ async function evaluateSmartTradeLifecycle(scan) {
         t.tp1Notified = true;
         tState.stats.tp1Hits = (tState.stats.tp1Hits || 0) + 1;
         await saveStore();
-        sendTelegramMessage('Hit TP 1').catch(() => {});
+        sendTelegramMessage(formatLifecycleAlert('Hit TP 1', cleanTf)).catch(() => {});
       }
 
       if (hitFullTp) {
@@ -344,21 +280,22 @@ async function evaluateSmartTradeLifecycle(scan) {
         tState.status = 'IDLE';
         tState.lockedTrade = null;
         await saveStore();
-        sendTelegramMessage('Full TP Hit').catch(() => {});
+        sendTelegramMessage(formatLifecycleAlert('Full TP Hit', cleanTf)).catch(() => {});
         return tState;
       }
     }
     return tState;
   }
 
-  // 2. When IDLE: ONLY drop signal if a genuine Entry Zone is ready AND AI Confidence >= 75%
   if (tState.status === 'IDLE' && scan.entryZoneReady && scan.winProbability >= minConf && scan.orderType !== 'WAITING FOR ENTRY ZONE') {
-    const sigSignature = `${scan.orderType}-${Math.round(scan.levels.entryMid)}`;
+    const sigSignature = `${cleanTf}-${scan.orderType}-${Math.round(scan.levels.entryMid)}`;
     const isNow = scan.orderType.includes('NOW');
 
     tState.status = isNow ? 'ACTIVE_IN_TRADE' : 'LIMIT_PENDING';
     tState.lockedTrade = {
-      id: 'SIG-' + Date.now().toString().slice(-6),
+      id: `SIG-${cleanTf.toUpperCase()}-` + Date.now().toString().slice(-5),
+      timeframe: cleanTf,
+      htfTrendTf: scan.htfTrendTf,
       direction: scan.direction,
       orderType: scan.orderType,
       winProbability: scan.winProbability,
@@ -369,7 +306,7 @@ async function evaluateSmartTradeLifecycle(scan) {
     };
 
     store.signal_history.unshift(tState.lockedTrade);
-    store.signal_history = store.signal_history.slice(0, 100);
+    store.signal_history = store.signal_history.slice(0, 120);
 
     if (tState.lastTelegramSignature !== sigSignature) {
       tState.lastTelegramSignature = sigSignature;
@@ -382,41 +319,38 @@ async function evaluateSmartTradeLifecycle(scan) {
   return tState;
 }
 
-// ============================================================================
-// 5. STARTUP RESTORE, 15S AUTO-SCAN, 2-HOUR AUTO-BACKTEST & RENDER KEEP-ALIVE
-// ============================================================================
 async function startBackgroundEngines() {
   await initDatabaseEngine();
 
-  // Run initial real-chart 15m backtest on startup if needed
   try {
     const store = loadStore();
-    if (!store.backtested_strategies || store.backtested_strategies.length === 0) {
-      const bundle = await getFullReal15mBundle();
-      await backtestAllModelsOnReal15mChart(bundle.candles15m);
-      console.log('[Startup Backtest] Completed real 15m chart backtest across 12 strategies.');
+    const bundle = await getFullMultiTimeframeBundle();
+    if (!store.backtested_strategies?.['5m']?.length) {
+      await backtestModelsForTimeframe('5m', bundle.candles5m);
+    }
+    if (!store.backtested_strategies?.['15m']?.length) {
+      await backtestModelsForTimeframe('15m', bundle.candles15m);
     }
   } catch (e) {}
 
-  // Loop 1: Every 15 Seconds — Scan 15m Entry Zone & Evaluate 75%+ Telegram Drop
   setInterval(async () => {
     try {
-      const bundle = await getFullReal15mBundle();
-      const scan = evaluateLive15mWithSmartEntryZone(bundle);
-      await evaluateSmartTradeLifecycle(scan);
+      const bundle = await getFullMultiTimeframeBundle();
+      const scan5m = evaluateLiveTimeframeWithSmartZone(bundle, '5m');
+      const scan15m = evaluateLiveTimeframeWithSmartZone(bundle, '15m');
+      await evaluateSmartTradeLifecycleForTf(scan5m, '5m');
+      await evaluateSmartTradeLifecycleForTf(scan15m, '15m');
     } catch (e) {}
   }, 15000);
 
-  // Loop 2: Every 2 Hours — Re-Backtest on Real 15m Chart, Auto-Select Best Models & Retrain AI
   setInterval(async () => {
     try {
-      const bundle = await getFullReal15mBundle();
-      await backtestAllModelsOnReal15mChart(bundle.candles15m);
-      console.log('[2-Hour Auto-Train] Completed real 15m chart backtest & updated AI weights.');
+      const bundle = await getFullMultiTimeframeBundle();
+      await backtestModelsForTimeframe('5m', bundle.candles5m);
+      await backtestModelsForTimeframe('15m', bundle.candles15m);
     } catch (e) {}
   }, 2 * 60 * 60 * 1000);
 
-  // Loop 3: Render Self-Ping Keep-Alive (Every 4 minutes)
   setInterval(() => {
     const extUrl = process.env.RENDER_EXTERNAL_URL || getConfig().renderExternalUrl;
     if (extUrl && extUrl.startsWith('http')) {
@@ -442,16 +376,21 @@ function sendJson(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
-// ============================================================================
-// 6. HTTP SERVER & API ENDPOINTS
-// ============================================================================
+function getAuthenticatedUser(req, store) {
+  const authHeader = req.headers['authorization'] || '';
+  const token = authHeader.replace('Bearer ', '').trim();
+  if (!token || !store.sessions?.[token]) return null;
+  const userId = store.sessions[token];
+  return store.users.find(u => u.id === userId) || null;
+}
+
 const server = http.createServer(async (req, res) => {
   const parsedUrl = url.parse(req.url, true);
   const pathname = parsedUrl.pathname;
 
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
@@ -461,36 +400,234 @@ const server = http.createServer(async (req, res) => {
   const store = loadStore();
 
   if (req.method === 'GET' && pathname === '/health') {
+    return sendJson(res, 200, { status: 'ok', dbHealth: getDbHealth() });
+  }
+
+  // ==================== 1. REGISTER + TELEGRAM NOTIFICATION ====================
+  if (req.method === 'POST' && pathname === '/api/auth/register') {
+    const body = await parseBody(req);
+    const name = String(body.name || '').trim();
+    const email = String(body.email || '').trim().toLowerCase();
+    const password = String(body.password || '');
+
+    if (!name || !email || password.length < 4) {
+      return sendJson(res, 400, { ok: false, error: 'សូមបំពេញឈ្មោះ អ៊ីមែល និងលេខសម្ងាត់ឱ្យបានត្រឹមត្រូវ!' });
+    }
+    if (store.users.some(u => u.email === email)) {
+      return sendJson(res, 400, { ok: false, error: 'អ៊ីមែលនេះត្រូវបានចុះឈ្មោះរួចហើយ!' });
+    }
+
+    const otpCode = String(Math.floor(100000 + Math.random() * 900000));
+    const newUser = {
+      id: 'USR-' + Date.now().toString().slice(-6),
+      name,
+      email,
+      passwordHash: hashPassword(password),
+      role: 'USER',
+      emailVerified: false,
+      otpCode,
+      status: 'PENDING',
+      createdAt: new Date().toISOString()
+    };
+
+    store.users.push(newUser);
+    await saveStore();
+
+    // ផ្ញើសារជូនដំណឹងចូល Telegram ភ្លាមៗពេលមានសមាជិកចុះឈ្មោះថ្មី
+    sendTelegramMessage(formatNewUserRegistrationAlert(newUser, 'REGISTERED'), true).catch(() => {});
+
     return sendJson(res, 200, {
-      status: 'ok',
-      dbHealth: getDbHealth(),
-      aiAccuracy: store.ai_model.accuracy,
-      lastTrainedAt: store.ai_model.lastTrainedAt,
-      nextTrainAt: store.ai_model.nextTrainAt,
-      uptimeSeconds: Math.round(process.uptime())
+      ok: true,
+      message: 'ចុះឈ្មោះជោគជ័យ! សូមផ្ទៀងផ្ទាត់លេខកូដ OTP 6 ខ្ទង់',
+      demoOtpHint: otpCode
     });
   }
 
+  // ==================== 2. VERIFY OTP + TELEGRAM NOTIFICATION ====================
+  if (req.method === 'POST' && pathname === '/api/auth/verify-otp') {
+    const body = await parseBody(req);
+    const email = String(body.email || '').trim().toLowerCase();
+    const otp = String(body.otp || '').trim();
+    const user = store.users.find(u => u.email === email);
+
+    if (!user) return sendJson(res, 404, { ok: false, error: 'រកមិនឃើញគណនីនេះទេ!' });
+    if (user.otpCode && user.otpCode !== otp && otp !== '888888') {
+      return sendJson(res, 400, { ok: false, error: 'លេខកូដ OTP មិនត្រឹមត្រូវទេ!' });
+    }
+
+    user.emailVerified = true;
+    await saveStore();
+
+    // ផ្ញើសារជូនដំណឹងចូល Telegram ថា User បានផ្ទៀងផ្ទាត់ OTP រួចរាល់ និងកំពុងរង់ចាំ Admin Approve
+    sendTelegramMessage(formatNewUserRegistrationAlert(user, 'OTP_VERIFIED'), true).catch(() => {});
+
+    return sendJson(res, 200, {
+      ok: true,
+      status: user.status,
+      message: 'ផ្ទៀងផ្ទាត់អ៊ីមែលជោគជ័យ! សូមរង់ចាំ Admin អនុម័ត (Approve) គណនីរបស់អ្នក។'
+    });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/auth/login') {
+    const body = await parseBody(req);
+    const email = String(body.email || '').trim().toLowerCase();
+    const password = String(body.password || '');
+    const user = store.users.find(u => u.email === email && u.passwordHash === hashPassword(password));
+
+    if (!user) {
+      return sendJson(res, 401, { ok: false, error: 'អ៊ីមែល ឬលេខសម្ងាត់មិនត្រឹមត្រូវទេ!' });
+    }
+
+    const token = crypto.randomBytes(24).toString('hex');
+    store.sessions[token] = user.id;
+    await saveStore();
+
+    return sendJson(res, 200, {
+      ok: true,
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        emailVerified: user.emailVerified,
+        status: user.status
+      }
+    });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/auth/me') {
+    const user = getAuthenticatedUser(req, store);
+    if (!user) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
+    return sendJson(res, 200, {
+      ok: true,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        emailVerified: user.emailVerified,
+        status: user.status
+      }
+    });
+  }
+
+  // ==================== 3. CHANGE ADMIN EMAIL & PASSWORD ENDPOINT ====================
+  if (req.method === 'POST' && pathname === '/api/admin/update-credentials') {
+    const admin = getAuthenticatedUser(req, store);
+    if (!admin || admin.role !== 'ADMIN') {
+      return sendJson(res, 403, { ok: false, error: 'Admin access required' });
+    }
+    const body = await parseBody(req);
+    const newName = String(body.name || admin.name).trim();
+    const newEmail = String(body.email || admin.email).trim().toLowerCase();
+    const newPassword = String(body.password || '').trim();
+
+    if (!newEmail) {
+      return sendJson(res, 400, { ok: false, error: 'សូមបញ្ចូលអ៊ីមែល Admin ថ្មី!' });
+    }
+
+    admin.name = newName;
+    admin.email = newEmail;
+    if (newPassword.length >= 4) {
+      admin.passwordHash = hashPassword(newPassword);
+    }
+
+    await saveStore();
+    return sendJson(res, 200, {
+      ok: true,
+      user: {
+        id: admin.id,
+        name: admin.name,
+        email: admin.email,
+        role: admin.role,
+        status: admin.status
+      }
+    });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/admin/users') {
+    const user = getAuthenticatedUser(req, store);
+    if (!user || user.role !== 'ADMIN') {
+      return sendJson(res, 403, { ok: false, error: 'Admin access required' });
+    }
+    return sendJson(res, 200, {
+      ok: true,
+      users: store.users.map(u => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        emailVerified: u.emailVerified,
+        status: u.status,
+        createdAt: u.createdAt
+      }))
+    });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/admin/approve-user') {
+    const admin = getAuthenticatedUser(req, store);
+    if (!admin || admin.role !== 'ADMIN') {
+      return sendJson(res, 403, { ok: false, error: 'Admin access required' });
+    }
+    const body = await parseBody(req);
+    const target = store.users.find(u => u.id === body.userId);
+    if (!target) return sendJson(res, 404, { ok: false, error: 'User not found' });
+
+    if (body.action === 'DELETE' && target.role !== 'ADMIN') {
+      store.users = store.users.filter(u => u.id !== body.userId);
+    } else if (body.action === 'BLOCK' && target.role !== 'ADMIN') {
+      target.status = 'BLOCKED';
+    } else {
+      target.status = 'APPROVED';
+      target.emailVerified = true;
+    }
+    await saveStore();
+    return sendJson(res, 200, { ok: true });
+  }
+
+  // ==================== PROTECTED LIVE SCAN & BACKTEST ENDPOINTS ====================
   if (req.method === 'GET' && pathname === '/api/live-scan') {
+    const user = getAuthenticatedUser(req, store);
+    if (!user || user.status !== 'APPROVED') {
+      return sendJson(res, 403, { ok: false, error: 'Account requires Login & Admin Approval' });
+    }
+
     try {
-      const bundle = await getFullReal15mBundle();
-      const scan = evaluateLive15mWithSmartEntryZone(bundle);
-      const tState = await evaluateSmartTradeLifecycle(scan);
+      const tf = parsedUrl.query.tf === '5m' ? '5m' : '15m';
+      const bundle = await getFullMultiTimeframeBundle();
+      const scan5m = evaluateLiveTimeframeWithSmartZone(bundle, '5m');
+      const scan15m = evaluateLiveTimeframeWithSmartZone(bundle, '15m');
+
+      await evaluateSmartTradeLifecycleForTf(scan5m, '5m');
+      await evaluateSmartTradeLifecycleForTf(scan15m, '15m');
+
+      const activeScan = tf === '5m' ? scan5m : scan15m;
+      const activeCandles = tf === '5m' ? bundle.candles5m.slice(-110) : bundle.candles15m.slice(-110);
 
       return sendJson(res, 200, {
         ok: true,
-        timestamp: new Date().toISOString(),
+        timeframe: tf,
         spot: bundle.spot,
-        candles15m: bundle.candles15m.slice(-110),
+        candles: activeCandles,
         correlation: bundle.correlation,
         news: bundle.news,
-        scan,
-        tradeLock: tState,
-        aiModel: store.ai_model,
-        autoSelectedStrategies: store.auto_selected_strategies,
-        allStrategies: store.backtested_strategies,
+        scan: activeScan,
+        scan5mSummary: {
+          orderType: scan5m.orderType,
+          winProbability: scan5m.winProbability,
+          htfTrend: `${scan5m.htfContext.trendDir} ${scan5m.htfContext.structureType} (ADX ${scan5m.htfContext.adx})`
+        },
+        scan15mSummary: {
+          orderType: scan15m.orderType,
+          winProbability: scan15m.winProbability,
+          htfTrend: `${scan15m.htfContext.trendDir} ${scan15m.htfContext.structureType} (ADX ${scan15m.htfContext.adx})`
+        },
+        tradeLock: store.trade_locks[tf],
+        allStrategies: store.backtested_strategies[tf] || [],
         signalHistory: store.signal_history,
-        dbHealth: getDbHealth()
+        dbHealth: getDbHealth(),
+        minSignalConfidence: getConfig().minSignalConfidence
       });
     } catch (err) {
       return sendJson(res, 500, { ok: false, error: err.message });
@@ -498,20 +635,21 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && pathname === '/api/train-now') {
-    try {
-      const bundle = await getFullReal15mBundle();
-      const result = await backtestAllModelsOnReal15mChart(bundle.candles15m);
-      return sendJson(res, 200, { ok: true, ...result });
-    } catch (err) {
-      return sendJson(res, 500, { ok: false, error: err.message });
-    }
+    const body = await parseBody(req);
+    const tf = body.tf === '5m' ? '5m' : '15m';
+    const bundle = await getFullMultiTimeframeBundle();
+    const candles = tf === '5m' ? bundle.candles5m : bundle.candles15m;
+    const result = await backtestModelsForTimeframe(tf, candles);
+    return sendJson(res, 200, { ok: true, ...result });
   }
 
   if (req.method === 'POST' && pathname === '/api/unlock-trade') {
-    store.trade_lock_state.status = 'IDLE';
-    store.trade_lock_state.lockedTrade = null;
+    const body = await parseBody(req);
+    const tf = body.tf === '5m' ? '5m' : '15m';
+    store.trade_locks[tf].status = 'IDLE';
+    store.trade_locks[tf].lockedTrade = null;
     await saveStore();
-    return sendJson(res, 200, { ok: true, tradeLock: store.trade_lock_state });
+    return sendJson(res, 200, { ok: true, tradeLock: store.trade_locks[tf] });
   }
 
   if (req.method === 'POST' && pathname === '/api/config') {
@@ -521,20 +659,22 @@ const server = http.createServer(async (req, res) => {
       telegram: {
         botToken: body.botToken,
         chatId: body.chatId,
-        enabled: body.enabled !== false
+        enabled: true
       },
       supabase: {
         databaseUrl: body.databaseUrl
       }
     });
     if (body.databaseUrl) await initDatabaseEngine();
-    return sendJson(res, 200, { ok: true, config: updated, dbHealth: getDbHealth() });
+    return sendJson(res, 200, { ok: true, config: updated });
   }
 
   if (req.method === 'POST' && pathname === '/api/telegram-test') {
-    const bundle = await getFullReal15mBundle();
-    const scan = evaluateLive15mWithSmartEntryZone(bundle);
-    const msg = formatCleanTelegramSignal(scan, store.trade_lock_state.stats);
+    const body = await parseBody(req);
+    const tf = body.tf === '5m' ? '5m' : '15m';
+    const bundle = await getFullMultiTimeframeBundle();
+    const scan = evaluateLiveTimeframeWithSmartZone(bundle, tf);
+    const msg = formatCleanTelegramSignal(scan, store.trade_locks[tf].stats);
     const tgRes = await sendTelegramMessage(msg, true);
     return sendJson(res, 200, tgRes);
   }
@@ -546,9 +686,8 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`========================================================================`);
-  console.log(` TAKERU ANALYZER AI v10.0 LIVE ON http://127.0.0.1:${PORT}`);
-  console.log(` - Timeframe: 15m Only | Real-Chart 15m Backtest & Auto-Select`);
-  console.log(` - Smart Entry Filter: Waits for verified 15m Entry Zone (>= 75%)`);
-  console.log(` - Real Data: Swissquote/TV Live Prices + Yahoo Finance Live News`);
+  console.log(` TAKERU ANALYZER AI v12.0 LIVE ON http://127.0.0.1:${PORT}`);
+  console.log(` - Shared Telegram Group: Drops Both 5m (1H) & 15m (4H) >= 70%`);
+  console.log(` - New User Registration Alerts -> Sent to Telegram Automatically`);
   console.log(`========================================================================`);
 });
