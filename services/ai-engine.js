@@ -1026,7 +1026,7 @@ function evaluateLiveTimeframeWithSmartZone(bundle, tf = '15m') {
   const clearDolLabel = isBuy ? clearDol.bslLabel : clearDol.sslLabel;
 
   let orderType = 'WAITING FOR ENTRY ZONE';
-  if (entryZoneReady && winProbability >= 70.0) {
+  if (entryZoneReady && winProbability >= 75.0) {
     orderType = insideZone ? `${direction} NOW` : `${direction} LIMIT`;
   }
 
